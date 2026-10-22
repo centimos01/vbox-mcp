@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vbox-mcp"
+version = "0.1.0"
+description = "Servidor MCP para controlar VirtualBox"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["mcp>=2,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+vbox-mcp = "vbox_mcp.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vbox_mcp"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = ["integration: requiere VirtualBox real"]
+asyncio_mode = "auto"
