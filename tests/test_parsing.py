@@ -93,6 +93,7 @@ def test_parse_snapshots_marks_current() -> None:
         "uuid": "11111111-1111-1111-1111-111111111111",
         "description": "sin cambios",
         "current": True,
+        "timestamp": "",
     }
     assert snapshots[1]["name"] == "base"
     assert snapshots[1]["current"] is False

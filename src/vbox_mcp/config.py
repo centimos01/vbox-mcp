@@ -75,6 +75,9 @@ class Settings:
     allow_mouse: bool
     guest_user: str | None
     guest_password: str | None
+    max_retries: int = 0
+    rate_limit_calls_per_minute: int = 0
+    dangerous_vm_patterns: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Settings":
@@ -85,6 +88,21 @@ class Settings:
             timeout = max(1, int(timeout_raw))
         except ValueError:
             timeout = 60
+
+        retries_raw = env.get("VBOX_MCP_RETRIES", "0")
+        try:
+            retries = max(0, min(5, int(retries_raw)))
+        except ValueError:
+            retries = 0
+
+        rate_limit_raw = env.get("VBOX_MCP_RATE_LIMIT", "0")
+        try:
+            rate_limit = max(0, int(rate_limit_raw))
+        except ValueError:
+            rate_limit = 0
+
+        dangerous_patterns_raw = env.get("VBOX_MCP_DANGEROUS_VM_PATTERNS", "")
+        dangerous_patterns = tuple(p.strip() for p in dangerous_patterns_raw.split(",") if p.strip())
 
         audit_raw = env.get("VBOX_MCP_AUDIT_LOG")
         allow_mouse_raw = env.get("VBOX_MCP_ALLOW_MOUSE")
@@ -97,4 +115,7 @@ class Settings:
             allow_mouse=_as_bool(allow_mouse_raw, default=True),
             guest_user=env.get("VBOX_MCP_GUEST_USER") or None,
             guest_password=env.get("VBOX_MCP_GUEST_PASSWORD") or None,
+            max_retries=retries,
+            rate_limit_calls_per_minute=rate_limit,
+            dangerous_vm_patterns=dangerous_patterns,
         )

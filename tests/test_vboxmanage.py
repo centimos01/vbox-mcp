@@ -81,12 +81,14 @@ def test_run_timeout(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> Non
 def test_list_vms_merges_running_state(settings: Settings, fake) -> None:
     fake.response("list vms", stdout=f'"Win10" {{{UUID1}}}\n"Ubuntu" {{{UUID2}}}\n')
     fake.response("list runningvms", stdout=f'"Win10" {{{UUID1}}}\n')
+    fake.response(f"showvminfo {UUID1} --machinereadable", stdout='groups="/"\ndescription=""\n')
+    fake.response(f"showvminfo {UUID2} --machinereadable", stdout='groups="/Dev"\ndescription="Test VM"\n')
 
     vms = list_vms(settings)
 
     assert vms == [
-        {"name": "Win10", "uuid": UUID1, "state": "running"},
-        {"name": "Ubuntu", "uuid": UUID2, "state": "stopped"},
+        {"name": "Win10", "uuid": UUID1, "state": "running", "group": "/", "description": ""},
+        {"name": "Ubuntu", "uuid": UUID2, "state": "stopped", "group": "/Dev", "description": "Test VM"},
     ]
 
 

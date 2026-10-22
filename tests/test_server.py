@@ -27,6 +27,14 @@ READ_ONLY_TOOLS = {
     "vbox_list_networks",
     "vbox_guest_ip",
     "vbox_screenshot",
+    "vbox_host_info",
+    "vbox_list_groups",
+    "vbox_list_media",
+    "vbox_disk_info",
+    "vbox_audit_log",
+    "vbox_audit_stats",
+    "vbox_wait_for_state",
+    "vbox_nat_list_rules",
 }
 
 EXPECTED_TOOLS = READ_ONLY_TOOLS | {
@@ -45,15 +53,25 @@ EXPECTED_TOOLS = READ_ONLY_TOOLS | {
     "vbox_shared_folder_remove",
     "vbox_nat_port_forward_add",
     "vbox_nat_port_forward_remove",
+    "vbox_vrde_configure",
+    "vbox_disk_create",
+    "vbox_disk_attach",
+    "vbox_disk_detach",
+    "vbox_disk_resize",
     "vbox_snapshot_take",
     "vbox_snapshot_restore",
     "vbox_snapshot_delete",
+    "vbox_snapshot_rename",
+    "vbox_export_vm",
+    "vbox_import_vm",
     "vbox_guest_exec",
+    "vbox_guest_run_script",
     "vbox_guest_copy_to",
     "vbox_guest_copy_from",
     "vbox_send_keys",
     "vbox_mouse_move",
     "vbox_mouse_click",
+    "vbox_group_vms",
 }
 
 

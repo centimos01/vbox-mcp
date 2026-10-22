@@ -1,4 +1,4 @@
-﻿"""Operaciones de ciclo de vida de mÃ¡quinas virtuales."""
+"""Operaciones de ciclo de vida de máquinas virtuales."""
 
 from __future__ import annotations
 
@@ -10,14 +10,15 @@ from .snapshots import validate_snapshot_name
 from .storage import attach_iso
 from .vboxmanage import VBoxError, run, validate_vm
 
-_START_MODES = {"headless", "gui"}
+_START_MODES = {"headless", "gui", "separate"}
 _STOP_MODES = {"acpi", "poweroff", "save"}
-_NIC_MODES = {"nat", "bridged", "hostonly", "none"}
+_NIC_MODES = {"nat", "bridged", "hostonly", "none", "intnet", "natnetwork"}
 _SATA_CONTROLLER = "sata"
+_BOOT_DEVICES = {"dvd", "disk", "net", "none"}
 
 
 def start_vm(settings: Settings, vm: str, mode: str = "headless") -> dict[str, str]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     if mode not in _START_MODES:
         raise VBoxError(f"mode debe ser uno de {sorted(_START_MODES)}, no {mode!r}")
     run(["startvm", vm, "--type", mode], settings=settings)
@@ -25,7 +26,7 @@ def start_vm(settings: Settings, vm: str, mode: str = "headless") -> dict[str, s
 
 
 def stop_vm(settings: Settings, vm: str, mode: str = "acpi") -> dict[str, str]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     if mode not in _STOP_MODES:
         raise VBoxError(f"mode debe ser uno de {sorted(_STOP_MODES)}, no {mode!r}")
     command = {"acpi": "acpipowerbutton", "poweroff": "poweroff", "save": "savestate"}[mode]
@@ -34,19 +35,19 @@ def stop_vm(settings: Settings, vm: str, mode: str = "acpi") -> dict[str, str]:
 
 
 def pause_vm(settings: Settings, vm: str) -> dict[str, str]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     run(["controlvm", vm, "pause"], settings=settings)
     return {"vm": vm, "action": "pause"}
 
 
 def resume_vm(settings: Settings, vm: str) -> dict[str, str]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     run(["controlvm", vm, "resume"], settings=settings)
     return {"vm": vm, "action": "resume"}
 
 
 def reset_vm(settings: Settings, vm: str) -> dict[str, str]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     run(["controlvm", vm, "reset"], settings=settings)
     return {"vm": vm, "action": "reset"}
 
@@ -151,15 +152,22 @@ def modify_vm(
     vm: str,
     cpus: int | None = None,
     memory_mb: int | None = None,
+    vram_mb: int | None = None,
     nic: str | None = None,
     adapter: str | None = None,
+    description: str | None = None,
+    boot_order: list[str] | None = None,
 ) -> dict[str, object]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     args = ["modifyvm", vm]
     if cpus is not None:
         args += ["--cpus", str(cpus)]
     if memory_mb is not None:
         args += ["--memory", str(memory_mb)]
+    if vram_mb is not None:
+        if not 1 <= vram_mb <= 256:
+            raise VBoxError("vram_mb debe estar entre 1 y 256")
+        args += ["--vram", str(vram_mb)]
     if nic is not None:
         if nic not in _NIC_MODES:
             raise VBoxError(f"nic debe ser uno de {sorted(_NIC_MODES)}, no {nic!r}")
@@ -169,8 +177,16 @@ def modify_vm(
         if adapter and nic in {"bridged", "hostonly"}:
             flag = "--bridgeadapter1" if nic == "bridged" else "--hostonlyadapter1"
             args += [flag, adapter]
+    if description is not None:
+        args += ["--description", description]
+    if boot_order is not None:
+        for i, dev in enumerate(boot_order[:4], 1):
+            dev = dev.lower()
+            if dev not in _BOOT_DEVICES:
+                raise VBoxError(f"boot device debe ser uno de {sorted(_BOOT_DEVICES)}, no {dev!r}")
+            args += [f"--boot{i}", dev]
     if len(args) == 2:
-        raise VBoxError("Debes indicar al menos un cambio (cpus, memory_mb o nic).")
+        raise VBoxError("Debes indicar al menos un cambio (cpus, memory_mb, vram_mb, nic, description o boot_order).")
     run(args, settings=settings)
     return {"vm": vm, "action": "modify", "changes": args[2:]}
 
@@ -212,10 +228,65 @@ def delete_vm(
     delete_disks: bool = False,
     timeout: int | None = None,
 ) -> dict[str, object]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     args = ["unregistervm", vm]
     if delete_disks:
         args.append("--delete")
     run(args, settings=settings, timeout=timeout)
     return {"vm": vm, "action": "delete", "delete_disks": delete_disks}
+
+
+def group_vms(
+    settings: Settings,
+    vms: list[str],
+    group: str,
+) -> dict[str, object]:
+    """Asigna una lista de VMs a un grupo VirtualBox."""
+    if not group.startswith("/"):
+        group = f"/{group}"
+    validated = [validate_vm(vm, settings) for vm in vms]
+    results: list[dict[str, object]] = []
+    for vm in validated:
+        run(["modifyvm", vm, "--groups", group], settings=settings)
+        results.append({"vm": vm, "group": group})
+    return {"action": "group_vms", "group": group, "vms": results}
+
+
+def add_storage_controller(
+    settings: Settings,
+    vm: str,
+    name: str,
+    bus: str = "sata",
+    controller: str = "IntelAhci",
+) -> dict[str, object]:
+    """Añade un controlador de almacenamiento a una VM."""
+    vm = validate_vm(vm, settings)
+    valid_buses = {"sata", "ide", "scsi", "usb", "pcie", "nvme"}
+    bus = bus.lower()
+    if bus not in valid_buses:
+        raise VBoxError(f"bus debe ser uno de {sorted(valid_buses)}, no {bus!r}")
+    run(
+        ["storagectl", vm, "--name", name, "--add", bus, "--controller", controller],
+        settings=settings,
+    )
+    return {"vm": vm, "action": "add_storage_controller", "name": name, "bus": bus}
+
+
+def snapshot_rename(
+    settings: Settings,
+    vm: str,
+    old_name: str,
+    new_name: str,
+    description: str = "",
+) -> dict[str, object]:
+    """Renombra un snapshot existente."""
+    from .snapshots import validate_snapshot_name
+    vm = validate_vm(vm, settings)
+    old_name = validate_snapshot_name(old_name)
+    new_name = validate_snapshot_name(new_name)
+    args = ["snapshot", vm, "edit", old_name, "--name", new_name]
+    if description:
+        args += ["--description", description]
+    run(args, settings=settings)
+    return {"vm": vm, "action": "snapshot_rename", "old_name": old_name, "new_name": new_name}
 

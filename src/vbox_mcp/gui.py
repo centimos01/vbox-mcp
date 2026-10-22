@@ -110,15 +110,19 @@ def scancodes_for(text: str) -> list[str]:
     return codes
 
 
-def screenshot(settings: Settings, vm: str, display: int = 0) -> Path:
-    directory = Path(tempfile.gettempdir()) / "vbox-mcp-shots"
-    directory.mkdir(parents=True, exist_ok=True)
-    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", vm) or "vm"
-    fd, name = tempfile.mkstemp(
-        prefix=f"{safe}-", suffix=f"-{display}.png", dir=str(directory)
-    )
-    os.close(fd)
-    path = Path(name)
+def screenshot(settings: Settings, vm: str, display: int = 0, output_path: str | None = None) -> Path:
+    if output_path:
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        directory = Path(tempfile.gettempdir()) / "vbox-mcp-shots"
+        directory.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", vm) or "vm"
+        fd, name = tempfile.mkstemp(
+            prefix=f"{safe}-", suffix=f"-{display}.png", dir=str(directory)
+        )
+        os.close(fd)
+        path = Path(name)
 
     try:
         run(
@@ -131,7 +135,8 @@ def screenshot(settings: Settings, vm: str, display: int = 0) -> Path:
                 "y no en estado guardado."
             )
     except Exception:
-        path.unlink(missing_ok=True)
+        if not output_path:
+            path.unlink(missing_ok=True)
         raise
     return path
 

@@ -74,8 +74,9 @@ def guest_exec(
     timeout: int = 60,
     env: dict[str, str] | None = None,
     working_dir: str | None = None,
+    stdin: str | None = None,
 ) -> dict[str, object]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     args = list(args or [])
     env = dict(env or {})
     timeout = max(1, int(timeout))
@@ -98,6 +99,8 @@ def guest_exec(
         ]
         if working_dir:
             command += ["--cwd", working_dir]
+        if stdin is not None:
+            command += ["--stdin", stdin]
         for key, value in env.items():
             command += ["--putenv", f"{key}={value}"]
         command += ["--", *args]
@@ -156,7 +159,7 @@ def guest_copy_to(
     recursive: bool = False,
     timeout: int | None = None,
 ) -> dict[str, object]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     source = Path(host_path)
     if not source.exists():
         raise VBoxError(f"No existe host_path: {host_path}")
@@ -190,7 +193,7 @@ def guest_copy_from(
     recursive: bool = False,
     timeout: int | None = None,
 ) -> dict[str, object]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     target = Path(host_path)
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -210,4 +213,83 @@ def guest_copy_from(
             command.append("--recursive")
         run(command, settings=settings, timeout=timeout)
 
-    return {"vm": vm, "action": "guest_copy_from", "guest_path": guest_path, "host_path": str(target)}
+    return {
+        "vm": vm,
+        "action": "guest_copy_from",
+        "guest_path": guest_path,
+        "host_path": str(target),
+    }
+
+
+def guest_run_script(
+    settings: Settings,
+    vm: str,
+    user: str,
+    password: str,
+    script_content: str,
+    interpreter: str = "/bin/sh",
+    timeout: int = 60,
+    env: dict[str, str] | None = None,
+    working_dir: str | None = None,
+) -> dict[str, object]:
+    """Escribe un script en un archivo temporal del host, lo copia al guest y lo ejecuta.
+
+    Útil para ejecutar bloques de código sin tener que escapar cada argumento.
+    El archivo temporal del guest se limpia automáticamente tras la ejecución.
+    """
+    import tempfile
+
+    vm = validate_vm(vm, settings)
+    timeout = max(1, int(timeout))
+
+    # Escribe el script en un archivo temporal del host
+    fd, host_script = tempfile.mkstemp(prefix="vbox-mcp-script-", suffix=".sh")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(script_content)
+
+        # Ruta en el guest
+        guest_script = f"/tmp/vbox-mcp-script-{id(host_script)}.sh"
+
+        # Copia al guest
+        guest_copy_to(
+            settings, vm, user, password, host_script, guest_script, timeout=timeout
+        )
+    finally:
+        try:
+            os.unlink(host_script)
+        except OSError:
+            pass
+
+    # Ejecuta en el guest
+    try:
+        result = guest_exec(
+            settings,
+            vm,
+            user,
+            password,
+            interpreter,
+            args=[guest_script],
+            timeout=timeout,
+            env=env,
+            working_dir=working_dir,
+        )
+    finally:
+        # Limpia el script del guest (best effort)
+        try:
+            guest_exec(
+                settings,
+                vm,
+                user,
+                password,
+                "/bin/rm",
+                args=["-f", guest_script],
+                timeout=15,
+            )
+        except Exception:
+            pass
+
+    result["action"] = "guest_run_script"
+    result["interpreter"] = interpreter
+    return result
+

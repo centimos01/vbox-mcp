@@ -25,7 +25,7 @@ def snapshot_take(
     description: str = "",
     timeout: int | None = None,
 ) -> dict[str, str]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     name = _snapshot_name(name)
     args = ["snapshot", vm, "take", name]
     if description:
@@ -40,7 +40,7 @@ def snapshot_restore(
     name: str,
     timeout: int | None = None,
 ) -> dict[str, str]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     name = _snapshot_name(name)
     run(["snapshot", vm, "restore", name], settings=settings, timeout=timeout)
     return {"vm": vm, "action": "snapshot_restore", "name": name}
@@ -52,7 +52,7 @@ def snapshot_delete(
     name: str,
     timeout: int | None = None,
 ) -> dict[str, str]:
-    vm = validate_vm(vm)
+    vm = validate_vm(vm, settings)
     name = _snapshot_name(name)
     run(["snapshot", vm, "delete", name], settings=settings, timeout=timeout)
     return {"vm": vm, "action": "snapshot_delete", "name": name}

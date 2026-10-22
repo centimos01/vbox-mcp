@@ -102,13 +102,21 @@ Las operaciones largas (`vbox_clone_vm`, `vbox_delete_vm`, `vbox_snapshot_take`,
 
 | Tool | Qué hace |
 |---|---|
-| `vbox_list_vms` | Lista VMs y estado (`running`/`stopped`). |
-| `vbox_vm_info` | Configuración y estado de una VM. |
+| `vbox_list_vms` | Lista VMs y estado (`running`/`stopped`). Incluye `group` y `description`. |
+| `vbox_vm_info` | Configuración y estado de una VM. Con `extended=true` incluye discos, NAT, carpetas compartidas. |
 | `vbox_list_ostypes` | Tipos de SO válidos para crear VMs. |
 | `vbox_snapshot_list` | Snapshots de una VM. |
 | `vbox_list_networks` | Interfaces host-only y redes NAT. |
-| `vbox_guest_ip` | IPv4 reportada por Guest Additions. |
-| `vbox_screenshot` | PNG de la pantalla de la VM. |
+| `vbox_guest_ip` | IPv4 reportada por Guest Additions. Con `all_nics=true` devuelve todas las NICs. |
+| `vbox_screenshot` | PNG de la pantalla de la VM. Con `output_path` guarda en archivo. |
+| `vbox_host_info` | Info del host: CPUs, RAM, SO, extensiones de virtualización. |
+| `vbox_list_groups` | Lista los grupos de VMs configurados. |
+| `vbox_list_media` | Lista todos los medios registrados (discos, ISOs, floppy). |
+| `vbox_disk_info` | Info de un medio: tamaño, formato, UUID, estado. |
+| `vbox_audit_log` | Lee el audit log del servidor (últimas N entradas). |
+| `vbox_audit_stats` | Estadísticas del audit log: llamadas por tool, errores, duración media. |
+| `vbox_wait_for_state` | Espera a que una VM alcance un estado (`running`, `stopped`, `paused`, `saved`). |
+| `vbox_nat_list_rules` | Lista todas las reglas NAT de una VM. |
 
 ### Ciclo de vida
 
@@ -116,21 +124,41 @@ Las operaciones largas (`vbox_clone_vm`, `vbox_delete_vm`, `vbox_snapshot_take`,
 
 ### Almacenamiento y red
 
-`vbox_attach_iso`, `vbox_detach_iso`, `vbox_shared_folder_add`, `vbox_shared_folder_remove`, `vbox_nat_port_forward_add`, `vbox_nat_port_forward_remove`.
+`vbox_attach_iso`, `vbox_detach_iso`, `vbox_shared_folder_add`, `vbox_shared_folder_remove`, `vbox_nat_port_forward_add`, `vbox_nat_port_forward_remove`, `vbox_vrde_configure`.
+
+### Discos
+
+`vbox_disk_create`, `vbox_disk_attach`, `vbox_disk_detach`, `vbox_disk_resize`, `vbox_disk_info`, `vbox_list_media`.
 
 ### Snapshots
 
-`vbox_snapshot_take`, `vbox_snapshot_restore`, `vbox_snapshot_delete`.
+`vbox_snapshot_take`, `vbox_snapshot_restore`, `vbox_snapshot_delete`, `vbox_snapshot_rename`, `vbox_snapshot_list`.
+
+### Exportar/Importar
+
+`vbox_export_vm`, `vbox_import_vm`.
 
 ### Guest control (Guest Additions)
 
-`vbox_guest_exec`, `vbox_guest_copy_to`, `vbox_guest_copy_from`.
+`vbox_guest_exec`, `vbox_guest_run_script`, `vbox_guest_copy_to`, `vbox_guest_copy_from`.
 
 ### GUI
 
 `vbox_send_keys`, `vbox_mouse_move`, `vbox_mouse_click`.
 
-Total: **31 tools**.
+### Agrupación
+
+`vbox_group_vms`.
+
+Total: **43 tools**.
+
+## Recursos MCP
+
+| Recurso | Qué hace |
+|---|---|
+| `vbox://health` | Health check del servidor y VirtualBox. |
+| `vbox://version` | Información de versión del servidor y VBoxManage. |
+| `vbox://host` | Información del host (CPUs, RAM, SO). |
 
 ## Seguridad
 
@@ -221,3 +249,80 @@ vbox_nat_port_forward_add(
 - Sin Guest Additions, `vbox_guest_*` y las carpetas compartidas fallan con un mensaje accionable.
 - Las carpetas compartidas añadidas con la VM encendida son `--transient` (VirtualBox no permite persistirlas en caliente); vuelven a desaparecer al apagar la VM.
 - El servidor no instala Guest Additions ni crea controladores SATA en VMs ya existentes; `vbox_create_vm` sí lo hace.
+
+## Troubleshooting
+
+### VBoxManage no encontrado
+```
+Error: No se encontró VBoxManage. Define VBOX_MANAGE_PATH o instala VirtualBox.
+```
+- Verifica que VirtualBox esté instalado.
+- En Windows, la ruta típica es `C:\Program Files\Oracle\VirtualBox\VBoxManage.exe`.
+- Define `VBOX_MANAGE_PATH` en las variables de entorno si está en otra ubicación.
+
+### Guest Additions no disponibles
+```
+Error: Guest Additions no están instaladas o su servicio no está en ejecución en la VM.
+```
+- Instala las Guest Additions en la VM (Dispositivos → Insertar imagen de CD de las «Guest Additions»).
+- Reinicia la VM después de la instalación.
+- Verifica que el servicio `VBoxService` (Linux) o `VBoxService.exe` (Windows) esté corriendo.
+
+### Credenciales de guest incorrectas
+```
+Error: Credenciales del guest incorrectas: revisa usuario y contraseña.
+```
+- Verifica el usuario y contraseña dentro de la VM.
+- En Linux, el usuario suele ser tu usuario normal (no root).
+- En Windows, usa el nombre de usuario completo (ej. `Usuario` o `Administrador`).
+
+### Timeout en operaciones largas
+```
+Error: VBoxManage excedió el timeout de 60 s ejecutando: clonevm ...
+```
+- Las operaciones como `vbox_clone_vm`, `vbox_export_vm`, `vbox_import_vm`, `vbox_snapshot_*` aceptan `timeout_seconds` (máx. 3600).
+- Aumenta `VBOX_MCP_TIMEOUT_SECONDS` para timeouts globales.
+
+### Ratón no funciona
+- Solo funciona en Windows.
+- La VM debe estar en modo `gui` (no `headless`).
+- La ventana de VirtualBox debe estar visible y en primer plano.
+- `VBOX_MCP_ALLOW_MOUSE` debe ser `true` (es el default).
+
+### Nombre de VM bloqueado por patrón peligroso
+```
+Error: Nombre de VM coincide con patrón peligroso: *test*
+```
+- Revisa `VBOX_MCP_DANGEROUS_VM_PATTERNS` (lista de patrones separados por comas).
+- Patrones usan sintaxis fnmatch (`*`, `?`, `[seq]`, `[!seq]`).
+
+### Modo solo lectura
+```
+Error: El servidor está en modo solo lectura (VBOX_MCP_READONLY=true); esta operación no está permitida.
+```
+- Pon `VBOX_MCP_READONLY=false` o elimina la variable para permitir operaciones de escritura.
+
+### Confirmación requerida
+```json
+{
+  "status": "confirmation_required",
+  "action": "delete",
+  "target": "MiVM",
+  "effects": ["se desregistra la VM", "se borran sus discos del host"]
+}
+```
+- Reenvía la llamada con `confirm=true` para ejecutar la operación destructiva.
+
+## Changelog
+
+### v0.2.0 (2026-10-22)
+- **Nuevas tools (12):** `vbox_disk_create`, `vbox_disk_attach`, `vbox_disk_detach`, `vbox_disk_resize`, `vbox_disk_info`, `vbox_list_media`, `vbox_export_vm`, `vbox_import_vm`, `vbox_guest_run_script`, `vbox_wait_for_state`, `vbox_audit_log`, `vbox_audit_stats`, `vbox_host_info`, `vbox_list_groups`, `vbox_snapshot_rename`, `vbox_nat_list_rules`, `vbox_vrde_configure`, `vbox_group_vms`.
+- **Mejoras a tools existentes:** `vbox_list_vms` incluye `group` y `description`; `vbox_vm_info` modo `extended` con discos, NAT, carpetas compartidas; `vbox_modify_vm` soporta `vram_mb`, `boot_order`, `description`; `vbox_start_vm` modo `separate`; `vbox_guest_exec` soporta `stdin`; `vbox_screenshot` guarda en `output_path`.
+- **MCP Resources:** `vbox://health`, `vbox://version`, `vbox://host`.
+- **Seguridad:** Bloqueo de nombres de VM con patrones peligrosos (`VBOX_MCP_DANGEROUS_VM_PATTERNS`).
+- **Observabilidad:** Audit log con estadísticas (`vbox_audit_stats`).
+- **Tests:** Añadidos `test_disks.py` y `test_export.py` (28 tests nuevos).
+- **Config:** `max_retries` (`VBOX_MCP_RETRIES`), `rate_limit` (`VBOX_MCP_RATE_LIMIT`).
+
+### v0.1.0
+- Versión inicial con ciclo de vida básico, snapshots, ISOs, carpetas compartidas, NAT, guest control y GUI.
