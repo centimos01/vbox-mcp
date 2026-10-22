@@ -11,21 +11,50 @@ Incluye ciclo de vida completo, snapshots, ISOs, carpetas compartidas, red NAT, 
 - Para `guest_exec`, `guest_copy_*` y carpetas compartidas: Guest Additions en la VM.
 - Para `vbox_mouse_*`: Windows, VM arrancada con `mode="gui"`, ventana visible/en primer plano y `VBOX_MCP_ALLOW_MOUSE` activo. Acepta nombre o UUID de la VM.
 
-## Instalación
+## Instalación rápida (Windows)
+
+Doble clic en `install.cmd`, o desde PowerShell (ajusta la ruta):
 
 ```powershell
-cd C:\Users\Usuario\vbox-mcp
-.\scripts\install.ps1
+cd C:\ruta\a\vbox-mcp
+.\install.cmd
 ```
 
-El script crea `.venv`, instala el paquete en modo editable y muestra el comando de registro.
+El instalador:
 
-Manual:
+- Detecta Python 3.11+ y crea/reutiliza `.venv`.
+- Instala `vbox-mcp` en modo editable.
+- Detecta `VBoxManage` y avisa si no lo encuentra (no instala VirtualBox).
+- Hace backup de la config global de OpenCode y registra `vbox` automáticamente.
+- Ejecuta un smoke test que lista tus VMs.
+
+Opciones útiles:
+
+```powershell
+.\install.cmd -DryRun          # muestra lo que haría, sin cambios
+.\install.cmd -SkipSmokeTest   # omite el listado de VMs
+.\install.cmd -PythonPath "C:\Python312\python.exe"
+```
+
+Los backups quedan como `opencode.jsonc.bak-AAAAMMDD-HHMMSS-fff` junto a la config.
+
+Instalación manual:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
+
+### Desinstalar
+
+```powershell
+.\uninstall.cmd                  # pide confirmación
+.\uninstall.cmd -DryRun          # muestra lo que haría, sin cambios
+.\uninstall.cmd -KeepVenv -Yes   # quita el registro y conserva .venv
+.\uninstall.cmd -PurgeData -Yes  # borra también auditoría y screenshots
+```
+
+El desinstalador hace backup de la config, elimina el registro `vbox` de OpenCode y `.venv`; conserva el log de auditoría salvo que uses `-PurgeData`. **No toca VirtualBox ni tus VMs, y conserva el resto del repositorio.**
 
 ## Registro en OpenCode
 
