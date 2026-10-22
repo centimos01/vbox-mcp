@@ -25,6 +25,14 @@ def main() -> int:
 
     sys.stdout.buffer.write(str(response.get("stdout", "")).encode("utf-8"))
     sys.stderr.buffer.write(str(response.get("stderr", "")).encode("utf-8"))
+
+    touch_index = response.get("touch_index")
+    if touch_index is not None:
+        from pathlib import Path
+
+        target = Path(args[int(touch_index)])
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR" + (800).to_bytes(4, "big") + (600).to_bytes(4, "big"))
     return int(response.get("returncode", 0))
 
 

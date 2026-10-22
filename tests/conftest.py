@@ -23,9 +23,22 @@ class FakeVBox:
             encoding="utf-8",
         )
 
-    def response(self, key: str, *, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
+    def response(
+        self,
+        key: str,
+        *,
+        stdout: str = "",
+        stderr: str = "",
+        returncode: int = 0,
+        touch_index: int | None = None,
+    ) -> None:
         data = json.loads(self.config.read_text(encoding="utf-8"))
-        data[key] = {"stdout": stdout, "stderr": stderr, "returncode": returncode}
+        data[key] = {
+            "stdout": stdout,
+            "stderr": stderr,
+            "returncode": returncode,
+            "touch_index": touch_index,
+        }
         self.config.write_text(json.dumps(data), encoding="utf-8")
 
     def calls(self) -> list[list[str]]:
