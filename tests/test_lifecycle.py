@@ -60,6 +60,34 @@ def test_pause_resume_reset(settings: Settings, fake) -> None:
     assert fake.last_args == ["controlvm", "Win10", "reset"]
 
 
+def test_clone_vm_linked_requires_snapshot(settings: Settings, fake) -> None:
+    with pytest.raises(VBoxError, match="snapshot"):
+        clone_vm(settings, "Win10", "Clone", mode="linked")
+
+
+def test_create_vm_nat_ignores_adapter(settings: Settings, fake) -> None:
+    create_vm(
+        settings,
+        "NewVM",
+        "Windows10_64",
+        cpus=4,
+        memory_mb=8192,
+        network="nat",
+        adapter="Ethernet",
+    )
+
+    assert fake.last_args == [
+        "modifyvm",
+        "NewVM",
+        "--cpus",
+        "4",
+        "--memory",
+        "8192",
+        "--nic1",
+        "nat",
+    ]
+
+
 def test_create_vm_minimal(settings: Settings, fake) -> None:
     result = create_vm(settings, "NewVM", "Windows10_64", cpus=4, memory_mb=8192)
 

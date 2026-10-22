@@ -26,6 +26,10 @@ def _elapsed_ms(start: float) -> int:
     return int((time.perf_counter() - start) * 1000)
 
 
+def _clamp_timeout(value: int) -> int:
+    return max(1, int(value))
+
+
 def _read(
     settings: Settings,
     tool: str,
@@ -35,7 +39,7 @@ def _read(
 ) -> Any:
     try:
         value = fn()
-    except VBoxError as exc:
+    except (VBoxError, OSError) as exc:
         audit(settings, tool, args, f"error: {exc}", _elapsed_ms(start))
         raise ToolError(str(exc)) from exc
     audit(settings, tool, args, "ok", _elapsed_ms(start))
@@ -70,7 +74,7 @@ def _mutate(
             "target": exc.target,
             "effects": exc.effects,
         }
-    except VBoxError as exc:
+    except (VBoxError, OSError) as exc:
         audit(settings, tool, args, f"error: {exc}", _elapsed_ms(start))
         raise ToolError(str(exc)) from exc
     return _read(settings, tool, args, start, fn)
@@ -381,7 +385,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                     name,
                     mode=mode,
                     snapshot=snapshot or None,
-                    timeout=timeout_seconds,
+                    timeout=_clamp_timeout(timeout_seconds),
                 ),
             )
 
@@ -416,7 +420,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                     settings,
                     vm,
                     delete_disks=delete_disks,
-                    timeout=timeout_seconds,
+                    timeout=_clamp_timeout(timeout_seconds),
                 ),
             )
 
@@ -581,10 +585,20 @@ def build_server(settings: Settings | None = None) -> MCPServer:
         # ---------------------------- Snapshots ----------------------------
 
         @server.tool()
-        def vbox_snapshot_take(vm: str, name: str, description: str = "") -> dict:
+        def vbox_snapshot_take(
+            vm: str,
+            name: str,
+            description: str = "",
+            timeout_seconds: int = 600,
+        ) -> dict:
             """Crea un snapshot de la VM."""
             start = time.perf_counter()
-            args = {"vm": vm, "name": name, "description": description}
+            args = {
+                "vm": vm,
+                "name": name,
+                "description": description,
+                "timeout_seconds": timeout_seconds,
+            }
             return _mutate(
                 settings,
                 "vbox_snapshot_take",
@@ -594,14 +608,30 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "snapshot_take",
                 vm,
                 [],
-                lambda: snapshots.snapshot_take(settings, vm, name, description),
+                lambda: snapshots.snapshot_take(
+                    settings,
+                    vm,
+                    name,
+                    description,
+                    timeout=_clamp_timeout(timeout_seconds),
+                ),
             )
 
         @server.tool()
-        def vbox_snapshot_restore(vm: str, name: str, confirm: bool = False) -> dict:
+        def vbox_snapshot_restore(
+            vm: str,
+            name: str,
+            confirm: bool = False,
+            timeout_seconds: int = 600,
+        ) -> dict:
             """Restaura un snapshot; descarta el estado actual de la VM. Requiere confirm."""
             start = time.perf_counter()
-            args = {"vm": vm, "name": name, "confirm": confirm}
+            args = {
+                "vm": vm,
+                "name": name,
+                "confirm": confirm,
+                "timeout_seconds": timeout_seconds,
+            }
             return _mutate(
                 settings,
                 "vbox_snapshot_restore",
@@ -611,7 +641,9 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "snapshot_restore",
                 vm,
                 [f"se descarta el estado actual y se vuelve al snapshot '{name}'"],
-                lambda: snapshots.snapshot_restore(settings, vm, name),
+                lambda: snapshots.snapshot_restore(
+                    settings, vm, name, timeout=_clamp_timeout(timeout_seconds)
+                ),
             )
 
         @server.tool()
@@ -639,7 +671,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 vm,
                 [f"se borra el snapshot '{name}' de forma permanente"],
                 lambda: snapshots.snapshot_delete(
-                    settings, vm, name, timeout=timeout_seconds
+                    settings, vm, name, timeout=_clamp_timeout(timeout_seconds)
                 ),
             )
 
@@ -728,7 +760,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                     host_path,
                     guest_path,
                     recursive=recursive,
-                    timeout=timeout_seconds,
+                    timeout=_clamp_timeout(timeout_seconds),
                 ),
             )
 
@@ -770,7 +802,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                     guest_path,
                     host_path,
                     recursive=recursive,
-                    timeout=timeout_seconds,
+                    timeout=_clamp_timeout(timeout_seconds),
                 ),
             )
 

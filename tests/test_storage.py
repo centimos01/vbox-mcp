@@ -181,8 +181,31 @@ def test_shared_folder_add_running_vm_uses_transient(settings: Settings, fake, t
 
 
 def test_shared_folder_remove_running_vm_uses_transient(settings: Settings, fake) -> None:
-    fake.response("showvminfo Ubuntu --machinereadable", stdout='VMState="running"\n')
+    fake.response(
+        "showvminfo Ubuntu --machinereadable",
+        stdout='VMState="running"\nSharedFolderNameTransientMapping1="proyecto"\n',
+    )
 
     shared_folder_remove(settings, "Ubuntu", "proyecto")
 
     assert fake.last_args == ["sharedfolder", "remove", "Ubuntu", "--name", "proyecto", "--transient"]
+
+
+def test_shared_folder_remove_running_persistent_fails_clearly(settings: Settings, fake) -> None:
+    fake.response(
+        "showvminfo Ubuntu --machinereadable",
+        stdout='VMState="running"\nSharedFolderNameMachineMapping1="proyecto"\n',
+    )
+
+    with pytest.raises(VBoxError, match="apaga la VM"):
+        shared_folder_remove(settings, "Ubuntu", "proyecto")
+
+
+def test_nat_port_forward_add_paused_vm_uses_controlvm(settings: Settings, fake) -> None:
+    fake.response("showvminfo Ubuntu --machinereadable", stdout='VMState="paused"\n')
+
+    nat_port_forward_add(
+        settings, "Ubuntu", rule_name="web", protocol="tcp", host_port=8080, guest_port=80
+    )
+
+    assert fake.last_args == ["controlvm", "Ubuntu", "natpf1", "web,tcp,,8080,,80"]

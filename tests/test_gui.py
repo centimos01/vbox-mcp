@@ -79,6 +79,23 @@ def test_screenshot_fails_when_file_missing(settings: Settings, fake) -> None:
         screenshot(settings, "Win10")
 
 
+def test_screenshot_removes_temp_file_on_failure(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(gui.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    def fail(*args, **kwargs):
+        raise VBoxError("boom")
+
+    monkeypatch.setattr(gui, "run", fail)
+
+    with pytest.raises(VBoxError, match="boom"):
+        screenshot(settings, "Win10")
+
+    shots = tmp_path / "vbox-mcp-shots"
+    assert not shots.exists() or not list(shots.iterdir())
+
+
 def test_send_keys_string_mode(settings: Settings, fake) -> None:
     send_keys(settings, "Win10", "hello", method="string")
 
@@ -140,6 +157,15 @@ def test_largest_child_picks_display_area() -> None:
     assert gui._largest_child([(1, 0, 0, 100, 100), (2, 0, 0, 800, 600)]) == 2
     assert gui._largest_child([(1, 0, 0, 100, 100)]) == 1
     assert gui._largest_child([]) is None
+
+
+def test_resolve_window_name_uses_registered_name(settings: Settings, fake) -> None:
+    fake.response(
+        "showvminfo UUID-1 --machinereadable",
+        stdout='name="Windows 10"\n',
+    )
+
+    assert gui._resolve_window_name(settings, "UUID-1") == "Windows 10"
 
 
 def test_foreground_ok_requires_visible_focused_window() -> None:

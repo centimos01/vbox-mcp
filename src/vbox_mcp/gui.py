@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from .config import Settings
-from .vboxmanage import VBoxError, run
+from .vboxmanage import VBoxError, run, vm_info
 
 _BASE_SCANCODES = {
     "a": "1e", "b": "30", "c": "2e", "d": "20", "e": "12", "f": "21", "g": "22",
@@ -120,13 +120,19 @@ def screenshot(settings: Settings, vm: str, display: int = 0) -> Path:
     os.close(fd)
     path = Path(name)
 
-    run(["controlvm", vm, "screenshotpng", str(path), str(display)], settings=settings)
-
-    if not path.exists() or path.stat().st_size == 0:
-        raise VBoxError(
-            "VBoxManage no generó el screenshot. Comprueba que la VM esté encendida "
-            "y no en estado guardado."
+    try:
+        run(
+            ["controlvm", vm, "screenshotpng", str(path), str(display)],
+            settings=settings,
         )
+        if path.stat().st_size == 0:
+            raise VBoxError(
+                "VBoxManage no generó el screenshot. Comprueba que la VM esté encendida "
+                "y no en estado guardado."
+            )
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -201,6 +207,15 @@ def _require_mouse(settings: Settings) -> None:
 
 def _window_title(vm: str) -> str:
     return f"{vm} [Running] - Oracle VirtualBox"
+
+
+def _resolve_window_name(settings: Settings, vm: str) -> str:
+    try:
+        info = vm_info(settings, vm)
+    except (VBoxError, OSError):
+        return vm
+    name = info.get("summary", {}).get("name")
+    return str(name) if name else vm
 
 
 def _find_window(vm: str) -> int:
@@ -343,10 +358,11 @@ def _guest_size(settings: Settings, vm: str) -> tuple[int, int]:
 
 def mouse_move(settings: Settings, vm: str, x: int, y: int) -> dict[str, object]:
     _require_mouse(settings)
+    window = _resolve_window_name(settings, vm)
     guest_w, guest_h = _guest_size(settings, vm)
-    client_w, client_h = _client_size(vm)
+    client_w, client_h = _client_size(window)
     px, py = map_coords(x, y, guest_w, guest_h, client_w, client_h)
-    _move_to(vm, px, py)
+    _move_to(window, px, py)
     return {"vm": vm, "action": "mouse_move", "x": px, "y": py}
 
 
@@ -359,8 +375,9 @@ def mouse_click(
     double: bool = False,
 ) -> dict[str, object]:
     _require_mouse(settings)
+    window = _resolve_window_name(settings, vm)
     guest_w, guest_h = _guest_size(settings, vm)
-    client_w, client_h = _client_size(vm)
+    client_w, client_h = _client_size(window)
     px, py = map_coords(x, y, guest_w, guest_h, client_w, client_h)
-    _click_at(vm, px, py, button, double)
+    _click_at(window, px, py, button, double)
     return {"vm": vm, "action": "mouse_click", "x": px, "y": py, "button": button, "double": double}

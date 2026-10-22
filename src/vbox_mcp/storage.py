@@ -12,11 +12,28 @@ from .vboxmanage import VBoxError, run, run_process, validate_vm
 _PROTOCOLS = {"tcp", "udp"}
 
 
-def _is_running(settings: Settings, vm: str) -> bool:
+def _machine_info(settings: Settings, vm: str) -> dict[str, str]:
     result = run_process(["showvminfo", vm, "--machinereadable"], settings=settings)
     if result.returncode != 0:
-        return False
-    return parse_machine_readable(result.stdout).get("VMState") == "running"
+        detail = result.stderr.strip() or result.stdout.strip() or "sin detalle"
+        raise VBoxError(
+            f"No se pudo consultar el estado de {vm}: {detail}",
+            returncode=result.returncode,
+            stderr=result.stderr,
+        )
+    return parse_machine_readable(result.stdout)
+
+
+def _is_runtime(info: dict[str, str]) -> bool:
+    return info.get("VMState") in {"running", "paused"}
+
+
+def _shared_folder_names(info: dict[str, str], infix: str) -> set[str]:
+    names: set[str] = set()
+    for key, value in info.items():
+        if key.startswith(f"SharedFolderName{infix}"):
+            names.add(value)
+    return names
 
 
 def _validate_ip(label: str, value: str) -> str:
@@ -116,7 +133,7 @@ def shared_folder_add(
         args.append("--automount")
     if readonly:
         args.append("--readonly")
-    transient = _is_running(settings, vm)
+    transient = _is_runtime(_machine_info(settings, vm))
     if transient:
         args.append("--transient")
     run(args, settings=settings)
@@ -131,8 +148,16 @@ def shared_folder_add(
 
 def shared_folder_remove(settings: Settings, vm: str, name: str) -> dict[str, object]:
     vm = validate_vm(vm)
+    info = _machine_info(settings, vm)
+    runtime = _is_runtime(info)
+    transient = name in _shared_folder_names(info, "TransientMapping")
+    if runtime and not transient:
+        if name in _shared_folder_names(info, "MachineMapping"):
+            raise VBoxError(
+                f"La carpeta compartida {name!r} es persistente; apaga la VM para quitarla."
+            )
+        raise VBoxError(f"No existe la carpeta compartida {name!r} en {vm}.")
     args = ["sharedfolder", "remove", vm, "--name", name]
-    transient = _is_running(settings, vm)
     if transient:
         args.append("--transient")
     run(args, settings=settings)
@@ -163,19 +188,31 @@ def nat_port_forward_add(
     host_ip = _validate_ip("host_ip", host_ip)
 
     rule = f"{rule_name},{protocol},{host_ip},{host_port},{guest_ip},{guest_port}"
-    if _is_running(settings, vm):
+    runtime = _is_runtime(_machine_info(settings, vm))
+    if runtime:
         args = ["controlvm", vm, "natpf1", rule]
     else:
         args = ["modifyvm", vm, "--natpf1", rule]
     run(args, settings=settings)
-    return {"vm": vm, "action": "nat_port_forward_add", "rule": rule}
+    return {
+        "vm": vm,
+        "action": "nat_port_forward_add",
+        "rule": rule,
+        "transient": runtime,
+    }
 
 
 def nat_port_forward_remove(settings: Settings, vm: str, rule_name: str) -> dict[str, object]:
     vm = validate_vm(vm)
-    if _is_running(settings, vm):
+    runtime = _is_runtime(_machine_info(settings, vm))
+    if runtime:
         args = ["controlvm", vm, "natpf1", "delete", rule_name]
     else:
         args = ["modifyvm", vm, "--natpf1", "delete", rule_name]
     run(args, settings=settings)
-    return {"vm": vm, "action": "nat_port_forward_remove", "rule": rule_name}
+    return {
+        "vm": vm,
+        "action": "nat_port_forward_remove",
+        "rule": rule_name,
+        "transient": runtime,
+    }

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .config import Settings
 from .parsing import parse_machine_readable
+from .snapshots import validate_snapshot_name
 from .storage import attach_iso
 from .vboxmanage import VBoxError, run, validate_vm
 
@@ -82,7 +83,7 @@ def create_vm(
         "--nic1",
         network,
     ]
-    if adapter:
+    if adapter and network in {"bridged", "hostonly"}:
         flag = "--bridgeadapter1" if network == "bridged" else "--hostonlyadapter1"
         modify_args += [flag, adapter]
     run(modify_args, settings=settings)
@@ -165,7 +166,7 @@ def modify_vm(
         if nic in {"bridged", "hostonly"} and not adapter:
             raise VBoxError(f"nic={nic!r} requiere adapter (nombre de la interfaz del host).")
         args += ["--nic1", nic]
-        if adapter:
+        if adapter and nic in {"bridged", "hostonly"}:
             flag = "--bridgeadapter1" if nic == "bridged" else "--hostonlyadapter1"
             args += [flag, adapter]
     if len(args) == 2:
@@ -186,6 +187,12 @@ def clone_vm(
     name = validate_vm(name)
     if mode not in {"full", "linked"}:
         raise VBoxError("mode debe ser 'full' o 'linked'")
+    if mode == "linked" and not snapshot:
+        raise VBoxError(
+            "mode='linked' requiere snapshot: VirtualBox solo crea clones enlazados desde un snapshot."
+        )
+    if snapshot:
+        snapshot = validate_snapshot_name(snapshot)
 
     args = ["clonevm", source, "--name", name, "--register"]
     if mode == "full":

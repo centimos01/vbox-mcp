@@ -13,25 +13,36 @@ def _snapshot_name(name: str) -> str:
     return value
 
 
+def validate_snapshot_name(name: str) -> str:
+    """Valida un nombre de snapshot antes de pasarlo como argumento posicional."""
+    return _snapshot_name(name)
+
+
 def snapshot_take(
     settings: Settings,
     vm: str,
     name: str,
     description: str = "",
+    timeout: int | None = None,
 ) -> dict[str, str]:
     vm = validate_vm(vm)
     name = _snapshot_name(name)
     args = ["snapshot", vm, "take", name]
     if description:
         args += ["--description", description]
-    run(args, settings=settings)
+    run(args, settings=settings, timeout=timeout)
     return {"vm": vm, "action": "snapshot_take", "name": name}
 
 
-def snapshot_restore(settings: Settings, vm: str, name: str) -> dict[str, str]:
+def snapshot_restore(
+    settings: Settings,
+    vm: str,
+    name: str,
+    timeout: int | None = None,
+) -> dict[str, str]:
     vm = validate_vm(vm)
     name = _snapshot_name(name)
-    run(["snapshot", vm, "restore", name], settings=settings)
+    run(["snapshot", vm, "restore", name], settings=settings, timeout=timeout)
     return {"vm": vm, "action": "snapshot_restore", "name": name}
 
 

@@ -74,11 +74,28 @@ def test_guest_exec_translates_bad_credentials(settings: Settings, fake) -> None
 
 
 def test_guest_exec_nonzero_guest_exit_is_returned(settings: Settings, fake) -> None:
-    fake.response("default", stdout="fallo\nExit code: 7\n", returncode=7)
-
+    fake.response("default", stdout="fallo\n", returncode=39)
     result = guest_exec(settings, "Win10", user="u", password="p", exe="cmd.exe")
-
     assert result["exit_code"] == 7
+    assert "fallo" in result["stdout"]
+
+
+def test_guest_exec_maps_low_guest_exit(settings: Settings, fake) -> None:
+    fake.response("default", stdout="", returncode=33)
+    result = guest_exec(settings, "Win10", user="u", password="p", exe="cmd.exe")
+    assert result["exit_code"] == 1
+
+
+def test_guest_exec_ignores_guest_printed_exit_marker(settings: Settings, fake) -> None:
+    fake.response("default", stdout="Exit code: 0\n", returncode=39)
+    result = guest_exec(settings, "Win10", user="u", password="p", exe="cmd.exe")
+    assert result["exit_code"] == 7
+
+
+def test_guest_exec_vbox_timeout_raises(settings: Settings, fake) -> None:
+    fake.response("default", stderr="timed out", returncode=20)
+    with pytest.raises(VBoxError, match="tiempo|timeout|20"):
+        guest_exec(settings, "Win10", user="u", password="p", exe="cmd.exe")
 
 
 def test_guest_copy_to(settings: Settings, fake, tmp_path) -> None:

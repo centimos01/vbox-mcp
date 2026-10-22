@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,7 +11,12 @@ from typing import Iterator
 from .config import Settings
 from .vboxmanage import VBoxError, run, run_process, validate_vm
 
-_EXIT_RE = re.compile(r"Exit code:\s*(-?\d+)")
+# VBoxManage desplaza los códigos de salida del guest: 1..93 -> 33..125,
+# >=94 -> 126, y reserva 16..22 para estados propios de VBoxManage.
+_GUEST_MAPPED_FIRST = 33
+_GUEST_MAPPED_LAST = 125
+_GUEST_MAPPED_BIG = 126
+_GUEST_MAPPED_DISPLACEMENT = 32
 
 _HINTS = (
     (
@@ -74,6 +78,7 @@ def guest_exec(
     vm = validate_vm(vm)
     args = list(args or [])
     env = dict(env or {})
+    timeout = max(1, int(timeout))
 
     with password_file(password) as pwfile:
         command = [
@@ -99,21 +104,45 @@ def guest_exec(
 
         result = run_process(command, timeout=timeout + 15, settings=settings)
 
-    if result.returncode != 0:
+    if result.returncode == 0:
+        exit_code = 0
+        note: str | None = None
+    elif _GUEST_MAPPED_FIRST <= result.returncode <= _GUEST_MAPPED_LAST:
+        exit_code = result.returncode - _GUEST_MAPPED_DISPLACEMENT
+        note = None
+    elif result.returncode == _GUEST_MAPPED_BIG:
+        exit_code = _GUEST_MAPPED_BIG
+        note = (
+            "El guest terminó con un código >= 94; VBoxManage lo representa como 126."
+        )
+    else:
         _translate_error(result)
-        marker = _EXIT_RE.search(result.stdout) or _EXIT_RE.search(result.stderr)
-        if marker is None:
-            detail = result.stderr.strip() or result.stdout.strip() or "sin detalle"
-            raise VBoxError(
-                f"VBoxManage guestcontrol falló con código {result.returncode}: {detail}",
-                returncode=result.returncode,
-                stderr=result.stderr,
+        if result.returncode == 20:
+            message = (
+                "VBoxManage agotó el tiempo de espera del proceso del guest (código 20)."
             )
+        elif result.returncode in {18, 19}:
+            message = (
+                "El proceso del guest terminó de forma anormal (código "
+                f"{result.returncode})."
+            )
+        else:
+            detail = result.stderr.strip() or result.stdout.strip() or "sin detalle"
+            message = (
+                f"VBoxManage guestcontrol falló con código {result.returncode}: {detail}"
+            )
+        raise VBoxError(
+            message, returncode=result.returncode, stderr=result.stderr
+        )
 
-    match = _EXIT_RE.search(result.stdout) or _EXIT_RE.search(result.stderr)
-    exit_code = int(match.group(1)) if match else result.returncode
-
-    return {"exit_code": exit_code, "stdout": result.stdout, "stderr": result.stderr}
+    payload: dict[str, object] = {
+        "exit_code": exit_code,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+    }
+    if note:
+        payload["note"] = note
+    return payload
 
 
 def guest_copy_to(
