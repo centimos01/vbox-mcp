@@ -65,7 +65,7 @@ Todo es opcional por variables de entorno:
 
 La autodetección busca primero `VBOX_MANAGE_PATH`, luego `PATH` y finalmente las rutas estándar de VirtualBox.
 
-Las operaciones largas (`vbox_clone_vm`, `vbox_delete_vm`, `vbox_snapshot_take`, `vbox_snapshot_restore`, `vbox_snapshot_delete`, `vbox_guest_copy_to` y `vbox_guest_copy_from`) aceptan `timeout_seconds` (600 por defecto). El resto usa `VBOX_MCP_TIMEOUT_SECONDS`.
+Las operaciones largas (`vbox_clone_vm`, `vbox_delete_vm`, `vbox_snapshot_take`, `vbox_snapshot_restore`, `vbox_snapshot_delete`, `vbox_guest_copy_to` y `vbox_guest_copy_from`) aceptan `timeout_seconds` (600 por defecto, entre 1 y 3600). El resto usa `VBOX_MCP_TIMEOUT_SECONDS`.
 
 ## Tools
 
@@ -115,9 +115,9 @@ Total: **31 tools**.
 - Los fallos de `VBoxManage` se devuelven como error de tool (`isError`) con el mensaje original, para que el agente pueda corregir la llamada.
 - Para `network="bridged"` u `"hostonly"` en `vbox_create_vm`/`vbox_modify_vm` hay que indicar `adapter` (por ejemplo `"Ethernet"` o `"vboxnet0"`); si falta, la tool falla con un mensaje accionable.
 - Las reglas NAT aceptan `host_ip` para limitar la escucha a una interfaz concreta (por ejemplo `127.0.0.1`).
-- En VMs encendidas o pausadas las reglas NAT y las carpetas compartidas se aplican en caliente; las reglas/carpetas son `transient` y desaparecen al apagar la VM. Las persistentes se gestionan con la VM apagada.
+- En VMs encendidas o pausadas las reglas NAT se aplican en caliente y se guardan en la configuración (siguen activas tras reiniciar). Las carpetas compartidas añadidas en caliente son `transient` y desaparecen al apagar la VM; las persistentes se gestionan con la VM apagada.
 - `vbox_clone_vm(mode="linked")` requiere `snapshot` (VirtualBox solo enlaza desde un snapshot); `mode="full"` copia el disco sin snapshots.
-- `vbox_guest_exec` devuelve el `exit_code` real del guest aunque sea distinto de cero (VBoxManage desplaza 1..93 a 33..125). Si VBoxManage falla antes de ejecutar (timeout, Guest Additions, credenciales), la tool devuelve `isError`.
+- `vbox_guest_exec` devuelve el `exit_code` real del guest aunque sea distinto de cero (VBoxManage desplaza 1..93 a 33..125). Si el guest sale con 94 o más, VBoxManage solo informa 126: la tool devuelve `exit_code: null` y un `note` explicativo. Si VBoxManage falla antes de ejecutar (timeout, Guest Additions, credenciales), la tool devuelve `isError`.
 - Ninguna tool usa `shell=True`; los argumentos van en lista.
 - Las contraseñas del guest se pasan por un archivo temporal (`--passwordfile`) y se borran siempre; nunca van en `argv` ni en el log.
 - Cada llamada se audita en JSONL con `password`, `passwd`, `secret`, `token` y similares redactados.

@@ -82,9 +82,21 @@ def test_shared_folder_add_rejects_missing_host_path(settings: Settings, tmp_pat
 
 
 def test_shared_folder_remove(settings: Settings, fake) -> None:
+    fake.response(
+        "showvminfo Ubuntu --machinereadable",
+        stdout='VMState="poweroff"\nSharedFolderNameMachineMapping1="proyecto"\n',
+    )
+
     shared_folder_remove(settings, "Ubuntu", "proyecto")
 
     assert fake.last_args == ["sharedfolder", "remove", "Ubuntu", "--name", "proyecto"]
+
+
+def test_shared_folder_remove_missing_name_fails_clearly(settings: Settings, fake) -> None:
+    fake.response("showvminfo Ubuntu --machinereadable", stdout='VMState="poweroff"\n')
+
+    with pytest.raises(VBoxError, match="No existe"):
+        shared_folder_remove(settings, "Ubuntu", "typo")
 
 
 def test_nat_port_forward_add(settings: Settings, fake) -> None:

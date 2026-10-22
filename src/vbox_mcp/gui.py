@@ -210,24 +210,53 @@ def _window_title(vm: str) -> str:
 
 
 def _resolve_window_name(settings: Settings, vm: str) -> str:
-    try:
-        info = vm_info(settings, vm)
-    except (VBoxError, OSError):
-        return vm
+    info = vm_info(settings, vm)
     name = info.get("summary", {}).get("name")
     return str(name) if name else vm
 
 
+def _window_matches(title: str, vm: str) -> bool:
+    lower = title.strip().lower()
+    prefix = f"{vm.strip().lower()} ["
+    return lower.startswith(prefix) and (
+        lower.endswith(" - oracle virtualbox")
+        or lower.endswith(" - oracle vm virtualbox")
+    )
+
+
 def _find_window(vm: str) -> int:
     import ctypes
+    from ctypes import wintypes
 
-    hwnd = ctypes.windll.user32.FindWindowW(None, _window_title(vm))
-    if not hwnd:
-        raise VBoxError(
-            f"No se encontró la ventana '{_window_title(vm)}'. "
-            "Arranca la VM con mode='gui' para poder usar el ratón."
-        )
-    return int(hwnd)
+    user32 = ctypes.windll.user32
+    hwnd = user32.FindWindowW(None, _window_title(vm))
+    if hwnd:
+        return int(hwnd)
+
+    found: list[int] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def collect(window: int, _lparam: int) -> bool:
+        if not user32.IsWindowVisible(window):
+            return True
+        length = user32.GetWindowTextLengthW(window)
+        if length <= 0:
+            return True
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(window, buffer, length + 1)
+        if _window_matches(buffer.value, vm):
+            found.append(int(window))
+            return False
+        return True
+
+    user32.EnumWindows(collect, 0)
+    if found:
+        return found[0]
+
+    raise VBoxError(
+        f"No se encontró la ventana de '{vm}'. "
+        "Abre la VM con mode='gui' y deja la ventana visible (también sirve pausada)."
+    )
 
 
 def _largest_child(rects: list[tuple[int, int, int, int, int]]) -> int | None:

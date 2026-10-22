@@ -168,6 +168,13 @@ def test_resolve_window_name_uses_registered_name(settings: Settings, fake) -> N
     assert gui._resolve_window_name(settings, "UUID-1") == "Windows 10"
 
 
+def test_window_matches_state_and_branding() -> None:
+    assert gui._window_matches("Win10 [Running] - Oracle VirtualBox", "Win10")
+    assert gui._window_matches("win10 [Paused] - Oracle VM VirtualBox", "Win10")
+    assert not gui._window_matches("Win10 Beta [Running] - Oracle VirtualBox", "Win10")
+    assert not gui._window_matches("Otra [Running] - Oracle VirtualBox", "Win10")
+
+
 def test_foreground_ok_requires_visible_focused_window() -> None:
     class FakeUser32:
         def __init__(self, foreground: int, visible: bool = True, iconic: bool = False) -> None:

@@ -27,7 +27,7 @@ def _elapsed_ms(start: float) -> int:
 
 
 def _clamp_timeout(value: int) -> int:
-    return max(1, int(value))
+    return min(3600, max(1, int(value)))
 
 
 def _read(
@@ -368,7 +368,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "name": name,
                 "mode": mode,
                 "snapshot": snapshot,
-                "timeout_seconds": timeout_seconds,
+                "timeout_seconds": _clamp_timeout(timeout_seconds),
             }
             return _mutate(
                 settings,
@@ -402,7 +402,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "vm": vm,
                 "delete_disks": delete_disks,
                 "confirm": confirm,
-                "timeout_seconds": timeout_seconds,
+                "timeout_seconds": _clamp_timeout(timeout_seconds),
             }
             effects = ["se desregistra la VM"]
             if delete_disks:
@@ -597,7 +597,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "vm": vm,
                 "name": name,
                 "description": description,
-                "timeout_seconds": timeout_seconds,
+                "timeout_seconds": _clamp_timeout(timeout_seconds),
             }
             return _mutate(
                 settings,
@@ -630,7 +630,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "vm": vm,
                 "name": name,
                 "confirm": confirm,
-                "timeout_seconds": timeout_seconds,
+                "timeout_seconds": _clamp_timeout(timeout_seconds),
             }
             return _mutate(
                 settings,
@@ -659,7 +659,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "vm": vm,
                 "name": name,
                 "confirm": confirm,
-                "timeout_seconds": timeout_seconds,
+                "timeout_seconds": _clamp_timeout(timeout_seconds),
             }
             return _mutate(
                 settings,
@@ -690,6 +690,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
         ) -> dict:
             """Ejecuta un comando dentro del guest con Guest Additions y devuelve stdout/stderr."""
             start = time.perf_counter()
+            timeout = _clamp_timeout(timeout)
             audit_args = {
                 "vm": vm,
                 "user": user,
@@ -741,7 +742,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "host_path": host_path,
                 "guest_path": guest_path,
                 "recursive": recursive,
-                "timeout_seconds": timeout_seconds,
+                "timeout_seconds": _clamp_timeout(timeout_seconds),
             }
             return _mutate(
                 settings,
@@ -783,7 +784,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "guest_path": guest_path,
                 "host_path": host_path,
                 "recursive": recursive,
-                "timeout_seconds": timeout_seconds,
+                "timeout_seconds": _clamp_timeout(timeout_seconds),
             }
             return _mutate(
                 settings,

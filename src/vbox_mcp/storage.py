@@ -151,12 +151,14 @@ def shared_folder_remove(settings: Settings, vm: str, name: str) -> dict[str, ob
     info = _machine_info(settings, vm)
     runtime = _is_runtime(info)
     transient = name in _shared_folder_names(info, "TransientMapping")
-    if runtime and not transient:
+    if not transient:
         if name in _shared_folder_names(info, "MachineMapping"):
-            raise VBoxError(
-                f"La carpeta compartida {name!r} es persistente; apaga la VM para quitarla."
-            )
-        raise VBoxError(f"No existe la carpeta compartida {name!r} en {vm}.")
+            if runtime:
+                raise VBoxError(
+                    f"La carpeta compartida {name!r} es persistente; apaga la VM para quitarla."
+                )
+        else:
+            raise VBoxError(f"No existe la carpeta compartida {name!r} en {vm}.")
     args = ["sharedfolder", "remove", vm, "--name", name]
     if transient:
         args.append("--transient")
@@ -198,7 +200,6 @@ def nat_port_forward_add(
         "vm": vm,
         "action": "nat_port_forward_add",
         "rule": rule,
-        "transient": runtime,
     }
 
 
@@ -214,5 +215,4 @@ def nat_port_forward_remove(settings: Settings, vm: str, rule_name: str) -> dict
         "vm": vm,
         "action": "nat_port_forward_remove",
         "rule": rule_name,
-        "transient": runtime,
     }

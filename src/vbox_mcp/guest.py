@@ -111,12 +111,12 @@ def guest_exec(
         exit_code = result.returncode - _GUEST_MAPPED_DISPLACEMENT
         note = None
     elif result.returncode == _GUEST_MAPPED_BIG:
-        exit_code = _GUEST_MAPPED_BIG
+        exit_code = None
         note = (
-            "El guest terminó con un código >= 94; VBoxManage lo representa como 126."
+            "El guest terminó con un código >= 94; VBoxManage solo informa 126, "
+            "así que no se conoce el código exacto."
         )
     else:
-        _translate_error(result)
         if result.returncode == 20:
             message = (
                 "VBoxManage agotó el tiempo de espera del proceso del guest (código 20)."
@@ -127,6 +127,7 @@ def guest_exec(
                 f"{result.returncode})."
             )
         else:
+            _translate_error(result)
             detail = result.stderr.strip() or result.stdout.strip() or "sin detalle"
             message = (
                 f"VBoxManage guestcontrol falló con código {result.returncode}: {detail}"

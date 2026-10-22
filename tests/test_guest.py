@@ -98,6 +98,19 @@ def test_guest_exec_vbox_timeout_raises(settings: Settings, fake) -> None:
         guest_exec(settings, "Win10", user="u", password="p", exe="cmd.exe")
 
 
+def test_guest_exec_timeout_does_not_trust_guest_stderr(settings: Settings, fake) -> None:
+    fake.response("default", stderr="authentication failed", returncode=20)
+    with pytest.raises(VBoxError, match="tiempo"):
+        guest_exec(settings, "Win10", user="u", password="p", exe="cmd.exe")
+
+
+def test_guest_exec_large_guest_exit_is_unknown(settings: Settings, fake) -> None:
+    fake.response("default", returncode=126)
+    result = guest_exec(settings, "Win10", user="u", password="p", exe="cmd.exe")
+    assert result["exit_code"] is None
+    assert "note" in result
+
+
 def test_guest_copy_to(settings: Settings, fake, tmp_path) -> None:
     source = tmp_path / "script.sh"
     source.write_text("echo hi")
