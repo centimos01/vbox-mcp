@@ -131,28 +131,45 @@ try {
     }
 
     Write-Step "Comprobando Python 3.11+"
+    $needsVenv = $true
     if (Test-Path -LiteralPath $venvPython) {
         $base = @{ Exe = $venvPython; Prefix = @() }
         $version = & $venvPython -c "import sys; print(str(sys.version_info[0]) + '.' + str(sys.version_info[1]))"
         $versionText = ($version | Select-Object -Last 1)
         if (-not $versionText -or [version]$versionText -lt [version]"3.11") {
-            throw "El .venv existente usa Python $versionText. Borra $venv y vuelve a ejecutar el instalador."
-        }
-        Write-Host "    Venv existente: $venvPython (Python $versionText)"
-    }
-    else {
-        $base = Find-BasePython
-        Write-Host "    Python: $($base.Exe) $($base.Prefix -join ' ')"
-        if ($DryRun) {
-            Write-Host "    (dry-run: se crearia $venv)"
+            Write-Warning "El .venv existente usa Python $versionText. Se recreara."
+            Remove-Item -LiteralPath $venv -Recurse -Force
         }
         else {
-            & $base.Exe $base.Prefix -m venv $venv
+            # Check if venv has required packages
+            $healthy = & $venvPython -c "import mcp; import pywintypes" 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "    Venv existente OK: $venvPython (Python $versionText)"
+                $needsVenv = $false
+            }
+            else {
+                Write-Warning "El .venv existente no tiene las dependencias. Se recreara."
+                Remove-Item -LiteralPath $venv -Recurse -Force
+            }
+        }
+    }
+
+    if ($needsVenv) {
+        $base = Find-BasePython
+        Write-Host "    Python base: $($base.Exe) $($base.Prefix -join ' ')"
+        if ($DryRun) {
+            Write-Host "    (dry-run: se crearia $venv con --system-site-packages)"
+        }
+        else {
+            & $base.Exe $base.Prefix -m venv $venv --system-site-packages
             if ($LASTEXITCODE -ne 0) {
                 throw "No se pudo crear el entorno virtual en $venv"
             }
-            Write-Host "    Venv creado: $venv"
+            Write-Host "    Venv creado: $venv (con --system-site-packages)"
         }
+    }
+    else {
+        $base = @{ Exe = $venvPython; Prefix = @() }
     }
 
     Invoke-Step "Actualizando pip" {
@@ -160,6 +177,27 @@ try {
     }
     Invoke-Step "Instalando vbox-mcp en modo editable" {
         & $venvPython -m pip install --quiet -e $root
+    }
+
+    Invoke-Step "Corrigiendo pywin32 (Windows Store Python workaround)" {
+        # Windows Store Python venvs see system site-packages; copy DLLs there
+        $systemSitePackages = & $base.Exe $base.Prefix -c "import site; print(site.getsitepackages()[0])" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $systemSitePackages) {
+            $systemSitePackages = $systemSitePackages.Trim()
+            $srcDir = Join-Path $systemSitePackages "pywin32_system32"
+            $dstDir = Join-Path $systemSitePackages "win32"
+            if (Test-Path -LiteralPath $srcDir) {
+                $dlls = @("pywintypes311.dll", "pythoncom311.dll")
+                foreach ($dll in $dlls) {
+                    $src = Join-Path $srcDir $dll
+                    $dst = Join-Path $dstDir $dll
+                    if (Test-Path -LiteralPath $src -and -not (Test-Path -LiteralPath $dst)) {
+                        Copy-Item -LiteralPath $src -Destination $dst -Force
+                        Write-Host "    Copiado $dll a win32/ (system site-packages)"
+                    }
+                }
+            }
+        }
     }
 
     Write-Step "Comprobando VirtualBox"
