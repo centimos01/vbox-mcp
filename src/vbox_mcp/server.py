@@ -6,6 +6,7 @@ import time
 from typing import Any, Callable
 
 from mcp.server.mcpserver import Image, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from . import guest, gui, lifecycle, snapshots, storage
 from .config import Settings
@@ -36,7 +37,7 @@ def _read(
         value = fn()
     except VBoxError as exc:
         audit(settings, tool, args, f"error: {exc}", _elapsed_ms(start))
-        return {"status": "error", "error": str(exc)}
+        raise ToolError(str(exc)) from exc
     audit(settings, tool, args, "ok", _elapsed_ms(start))
     return value
 
@@ -71,7 +72,7 @@ def _mutate(
         }
     except VBoxError as exc:
         audit(settings, tool, args, f"error: {exc}", _elapsed_ms(start))
-        return {"status": "error", "error": str(exc)}
+        raise ToolError(str(exc)) from exc
     return _read(settings, tool, args, start, fn)
 
 
@@ -155,7 +156,11 @@ def build_server(settings: Settings | None = None) -> MCPServer:
         start = time.perf_counter()
         try:
             path = gui.screenshot(settings, vm, display)
-        except VBoxError as exc:
+            try:
+                data = path.read_bytes()
+            finally:
+                path.unlink(missing_ok=True)
+        except (OSError, VBoxError) as exc:
             audit(
                 settings,
                 "vbox_screenshot",
@@ -163,15 +168,15 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 f"error: {exc}",
                 _elapsed_ms(start),
             )
-            raise
+            raise ToolError(str(exc)) from exc
         audit(
             settings,
             "vbox_screenshot",
             {"vm": vm, "display": display},
-            f"ok: {path}",
+            "ok",
             _elapsed_ms(start),
         )
-        return Image(path=path)
+        return Image(data=data, format="png")
 
     if not settings.readonly:
         # ------------------------- Ciclo de vida -------------------------
@@ -272,6 +277,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
             disk_mb: int = 0,
             iso: str = "",
             network: str = "nat",
+            adapter: str = "",
         ) -> dict:
             """Crea y registra una VM. ostype sale de vbox_list_ostypes; disk_mb=0 no crea disco."""
             start = time.perf_counter()
@@ -283,6 +289,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "disk_mb": disk_mb,
                 "iso": iso,
                 "network": network,
+                "adapter": adapter,
             }
             return _mutate(
                 settings,
@@ -302,6 +309,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                     disk_mb=disk_mb,
                     iso=iso or None,
                     network=network,
+                    adapter=adapter,
                 ),
             )
 
@@ -311,10 +319,17 @@ def build_server(settings: Settings | None = None) -> MCPServer:
             cpus: int | None = None,
             memory_mb: int | None = None,
             nic: str | None = None,
+            adapter: str = "",
         ) -> dict:
             """Modifica CPU, RAM o el modo de la NIC 1 (nat, bridged, hostonly, none)."""
             start = time.perf_counter()
-            args = {"vm": vm, "cpus": cpus, "memory_mb": memory_mb, "nic": nic}
+            args = {
+                "vm": vm,
+                "cpus": cpus,
+                "memory_mb": memory_mb,
+                "nic": nic,
+                "adapter": adapter,
+            }
             return _mutate(
                 settings,
                 "vbox_modify_vm",
@@ -325,7 +340,12 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 vm,
                 [],
                 lambda: lifecycle.modify_vm(
-                    settings, vm, cpus=cpus, memory_mb=memory_mb, nic=nic
+                    settings,
+                    vm,
+                    cpus=cpus,
+                    memory_mb=memory_mb,
+                    nic=nic,
+                    adapter=adapter or None,
                 ),
             )
 
@@ -335,10 +355,17 @@ def build_server(settings: Settings | None = None) -> MCPServer:
             name: str,
             mode: str = "full",
             snapshot: str = "",
+            timeout_seconds: int = 600,
         ) -> dict:
             """Clona una VM. mode: full (copia completa) o linked (disco enlazado, rápido)."""
             start = time.perf_counter()
-            args = {"source": source, "name": name, "mode": mode, "snapshot": snapshot}
+            args = {
+                "source": source,
+                "name": name,
+                "mode": mode,
+                "snapshot": snapshot,
+                "timeout_seconds": timeout_seconds,
+            }
             return _mutate(
                 settings,
                 "vbox_clone_vm",
@@ -349,15 +376,30 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 name,
                 [],
                 lambda: lifecycle.clone_vm(
-                    settings, source, name, mode=mode, snapshot=snapshot or None
+                    settings,
+                    source,
+                    name,
+                    mode=mode,
+                    snapshot=snapshot or None,
+                    timeout=timeout_seconds,
                 ),
             )
 
         @server.tool()
-        def vbox_delete_vm(vm: str, delete_disks: bool = False, confirm: bool = False) -> dict:
+        def vbox_delete_vm(
+            vm: str,
+            delete_disks: bool = False,
+            confirm: bool = False,
+            timeout_seconds: int = 600,
+        ) -> dict:
             """Desregistra una VM. Solo borra sus discos si delete_disks=true. Requiere confirm."""
             start = time.perf_counter()
-            args = {"vm": vm, "delete_disks": delete_disks, "confirm": confirm}
+            args = {
+                "vm": vm,
+                "delete_disks": delete_disks,
+                "confirm": confirm,
+                "timeout_seconds": timeout_seconds,
+            }
             effects = ["se desregistra la VM"]
             if delete_disks:
                 effects.append("se borran sus discos del host")
@@ -370,7 +412,12 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "delete",
                 vm,
                 effects,
-                lambda: lifecycle.delete_vm(settings, vm, delete_disks=delete_disks),
+                lambda: lifecycle.delete_vm(
+                    settings,
+                    vm,
+                    delete_disks=delete_disks,
+                    timeout=timeout_seconds,
+                ),
             )
 
         # --------------------- Almacenamiento y red ---------------------
@@ -480,6 +527,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
             host_port: int,
             guest_port: int,
             guest_ip: str = "",
+            host_ip: str = "",
         ) -> dict:
             """Añade una regla de reenvío de puertos NAT (tcp/udp)."""
             start = time.perf_counter()
@@ -490,6 +538,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "host_port": host_port,
                 "guest_port": guest_port,
                 "guest_ip": guest_ip,
+                "host_ip": host_ip,
             }
             return _mutate(
                 settings,
@@ -508,6 +557,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                     host_port,
                     guest_port,
                     guest_ip=guest_ip,
+                    host_ip=host_ip,
                 ),
             )
 
@@ -565,10 +615,20 @@ def build_server(settings: Settings | None = None) -> MCPServer:
             )
 
         @server.tool()
-        def vbox_snapshot_delete(vm: str, name: str, confirm: bool = False) -> dict:
+        def vbox_snapshot_delete(
+            vm: str,
+            name: str,
+            confirm: bool = False,
+            timeout_seconds: int = 600,
+        ) -> dict:
             """Borra un snapshot de la VM. Requiere confirm."""
             start = time.perf_counter()
-            args = {"vm": vm, "name": name, "confirm": confirm}
+            args = {
+                "vm": vm,
+                "name": name,
+                "confirm": confirm,
+                "timeout_seconds": timeout_seconds,
+            }
             return _mutate(
                 settings,
                 "vbox_snapshot_delete",
@@ -578,7 +638,9 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "snapshot_delete",
                 vm,
                 [f"se borra el snapshot '{name}' de forma permanente"],
-                lambda: snapshots.snapshot_delete(settings, vm, name),
+                lambda: snapshots.snapshot_delete(
+                    settings, vm, name, timeout=timeout_seconds
+                ),
             )
 
         # ------------------------- Guest control -------------------------
@@ -636,6 +698,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
             host_path: str,
             guest_path: str,
             recursive: bool = False,
+            timeout_seconds: int = 600,
         ) -> dict:
             """Copia un archivo o carpeta del host al guest."""
             start = time.perf_counter()
@@ -646,6 +709,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "host_path": host_path,
                 "guest_path": guest_path,
                 "recursive": recursive,
+                "timeout_seconds": timeout_seconds,
             }
             return _mutate(
                 settings,
@@ -664,6 +728,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                     host_path,
                     guest_path,
                     recursive=recursive,
+                    timeout=timeout_seconds,
                 ),
             )
 
@@ -675,6 +740,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
             guest_path: str,
             host_path: str,
             recursive: bool = False,
+            timeout_seconds: int = 600,
         ) -> dict:
             """Copia un archivo o carpeta del guest al host."""
             start = time.perf_counter()
@@ -685,6 +751,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                 "guest_path": guest_path,
                 "host_path": host_path,
                 "recursive": recursive,
+                "timeout_seconds": timeout_seconds,
             }
             return _mutate(
                 settings,
@@ -703,6 +770,7 @@ def build_server(settings: Settings | None = None) -> MCPServer:
                     guest_path,
                     host_path,
                     recursive=recursive,
+                    timeout=timeout_seconds,
                 ),
             )
 

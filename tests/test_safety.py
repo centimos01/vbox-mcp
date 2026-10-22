@@ -90,3 +90,20 @@ def test_audit_never_breaks_the_call_on_io_error(tmp_path: Path) -> None:
     settings.audit_log.chmod(0o444)
 
     audit(settings, "tool", {}, "ok", 1)
+
+def test_redact_matches_secret_substrings() -> None:
+    redacted = redact(
+        {
+            "DB_PASS": "x",
+            "credentials": "y",
+            "private_key": "z",
+            "password_file": "C:/tmp/pw",
+            "normal": "ok",
+        }
+    )
+
+    assert redacted["DB_PASS"] == "***"
+    assert redacted["credentials"] == "***"
+    assert redacted["private_key"] == "***"
+    assert redacted["password_file"] == "***"
+    assert redacted["normal"] == "ok"

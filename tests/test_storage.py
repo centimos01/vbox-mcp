@@ -125,3 +125,64 @@ def test_nat_port_forward_remove(settings: Settings, fake) -> None:
     nat_port_forward_remove(settings, "Ubuntu", "web")
 
     assert fake.last_args == ["modifyvm", "Ubuntu", "--natpf1", "delete", "web"]
+
+def test_nat_port_forward_add_running_vm_uses_controlvm(settings: Settings, fake) -> None:
+    fake.response("showvminfo Ubuntu --machinereadable", stdout='VMState="running"\n')
+
+    nat_port_forward_add(
+        settings, "Ubuntu", rule_name="web", protocol="tcp", host_port=8080, guest_port=80
+    )
+
+    assert fake.last_args == ["controlvm", "Ubuntu", "natpf1", "web,tcp,,8080,,80"]
+
+
+def test_nat_port_forward_remove_running_vm_uses_controlvm(settings: Settings, fake) -> None:
+    fake.response("showvminfo Ubuntu --machinereadable", stdout='VMState="running"\n')
+
+    nat_port_forward_remove(settings, "Ubuntu", "web")
+
+    assert fake.last_args == ["controlvm", "Ubuntu", "natpf1", "delete", "web"]
+
+
+def test_nat_port_forward_honours_host_ip(settings: Settings, fake) -> None:
+    nat_port_forward_add(
+        settings,
+        "Ubuntu",
+        rule_name="web",
+        protocol="tcp",
+        host_port=8080,
+        guest_port=80,
+        host_ip="127.0.0.1",
+    )
+
+    assert fake.last_args[-1] == "web,tcp,127.0.0.1,8080,,80"
+
+
+def test_nat_port_forward_rejects_comma_in_guest_ip(settings: Settings) -> None:
+    with pytest.raises(VBoxError, match="guest_ip"):
+        nat_port_forward_add(
+            settings,
+            "Ubuntu",
+            rule_name="web",
+            protocol="tcp",
+            host_port=8080,
+            guest_port=80,
+            guest_ip="1.2.3.4,evil",
+        )
+
+
+def test_shared_folder_add_running_vm_uses_transient(settings: Settings, fake, tmp_path) -> None:
+    fake.response("showvminfo Ubuntu --machinereadable", stdout='VMState="running"\n')
+
+    shared_folder_add(settings, "Ubuntu", "proyecto", str(tmp_path))
+
+    assert fake.last_args[-1] == "--transient"
+    assert fake.last_args[:3] == ["sharedfolder", "add", "Ubuntu"]
+
+
+def test_shared_folder_remove_running_vm_uses_transient(settings: Settings, fake) -> None:
+    fake.response("showvminfo Ubuntu --machinereadable", stdout='VMState="running"\n')
+
+    shared_folder_remove(settings, "Ubuntu", "proyecto")
+
+    assert fake.last_args == ["sharedfolder", "remove", "Ubuntu", "--name", "proyecto", "--transient"]

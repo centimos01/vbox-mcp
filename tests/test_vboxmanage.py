@@ -178,3 +178,28 @@ def test_validate_vm_rejects_empty_and_flags() -> None:
             validate_vm(bad)
 
     assert validate_vm("  Win10 ") == "Win10"
+
+
+def test_decode_falls_back_for_non_utf8() -> None:
+    assert "Máquina" in vboxmanage._decode("Máquina".encode("cp1252"))
+
+
+def test_run_process_closes_stdin(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict = {}
+
+    class Done:
+        returncode = 0
+        stdout = b""
+        stderr = b""
+
+    def fake_run(*args, **kwargs):
+        captured.update(kwargs)
+        return Done()
+
+    monkeypatch.setattr(vboxmanage.subprocess, "run", fake_run)
+
+    run_process(["list", "vms"], settings=settings)
+
+    assert captured["stdin"] is subprocess.DEVNULL

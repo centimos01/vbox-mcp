@@ -59,27 +59,33 @@ def create_vm(
     disk_mb: int = 0,
     iso: str | None = None,
     network: str = "nat",
+    adapter: str = "",
 ) -> dict[str, object]:
     vm = validate_vm(name)
     if network not in _NIC_MODES:
         raise VBoxError(f"network debe ser uno de {sorted(_NIC_MODES)}, no {network!r}")
+    if network in {"bridged", "hostonly"} and not adapter:
+        raise VBoxError(
+            f"network={network!r} requiere adapter (nombre de la interfaz del host)."
+        )
     if cpus < 1 or memory_mb < 128:
         raise VBoxError("cpus debe ser >= 1 y memory_mb >= 128")
 
     run(["createvm", "--name", vm, "--ostype", ostype, "--register"], settings=settings)
-    run(
-        [
-            "modifyvm",
-            vm,
-            "--cpus",
-            str(cpus),
-            "--memory",
-            str(memory_mb),
-            "--nic1",
-            network,
-        ],
-        settings=settings,
-    )
+    modify_args = [
+        "modifyvm",
+        vm,
+        "--cpus",
+        str(cpus),
+        "--memory",
+        str(memory_mb),
+        "--nic1",
+        network,
+    ]
+    if adapter:
+        flag = "--bridgeadapter1" if network == "bridged" else "--hostonlyadapter1"
+        modify_args += [flag, adapter]
+    run(modify_args, settings=settings)
 
     disk_path: str | None = None
     has_sata = False
@@ -89,7 +95,7 @@ def create_vm(
         )
         cfg = raw.get("CfgFile")
         if not cfg:
-            raise VBoxError(f"No se pudo determinar la carpeta de configuraciÃ³n de {vm}")
+            raise VBoxError(f"No se pudo determinar la carpeta de configuración de {vm}")
         disk = Path(cfg).parent / f"{vm}.vdi"
         run(
             [
@@ -145,6 +151,7 @@ def modify_vm(
     cpus: int | None = None,
     memory_mb: int | None = None,
     nic: str | None = None,
+    adapter: str | None = None,
 ) -> dict[str, object]:
     vm = validate_vm(vm)
     args = ["modifyvm", vm]
@@ -155,7 +162,12 @@ def modify_vm(
     if nic is not None:
         if nic not in _NIC_MODES:
             raise VBoxError(f"nic debe ser uno de {sorted(_NIC_MODES)}, no {nic!r}")
+        if nic in {"bridged", "hostonly"} and not adapter:
+            raise VBoxError(f"nic={nic!r} requiere adapter (nombre de la interfaz del host).")
         args += ["--nic1", nic]
+        if adapter:
+            flag = "--bridgeadapter1" if nic == "bridged" else "--hostonlyadapter1"
+            args += [flag, adapter]
     if len(args) == 2:
         raise VBoxError("Debes indicar al menos un cambio (cpus, memory_mb o nic).")
     run(args, settings=settings)
@@ -168,6 +180,7 @@ def clone_vm(
     name: str,
     mode: str = "full",
     snapshot: str | None = None,
+    timeout: int | None = None,
 ) -> dict[str, str]:
     source = validate_vm(source)
     name = validate_vm(name)
@@ -176,21 +189,26 @@ def clone_vm(
 
     args = ["clonevm", source, "--name", name, "--register"]
     if mode == "full":
-        args += ["--mode", "all"]
+        args += ["--mode", "machine"]
     else:
         args += ["--mode", "machine", "--options", "link"]
     if snapshot:
         args += ["--snapshot", snapshot]
 
-    run(args, settings=settings)
+    run(args, settings=settings, timeout=timeout)
     return {"source": source, "name": name, "mode": mode}
 
 
-def delete_vm(settings: Settings, vm: str, delete_disks: bool = False) -> dict[str, object]:
+def delete_vm(
+    settings: Settings,
+    vm: str,
+    delete_disks: bool = False,
+    timeout: int | None = None,
+) -> dict[str, object]:
     vm = validate_vm(vm)
     args = ["unregistervm", vm]
     if delete_disks:
         args.append("--delete")
-    run(args, settings=settings)
+    run(args, settings=settings, timeout=timeout)
     return {"vm": vm, "action": "delete", "delete_disks": delete_disks}
 

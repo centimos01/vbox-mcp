@@ -65,6 +65,8 @@ Todo es opcional por variables de entorno:
 
 La autodetección busca primero `VBOX_MANAGE_PATH`, luego `PATH` y finalmente las rutas estándar de VirtualBox.
 
+Las operaciones largas (`vbox_clone_vm`, `vbox_delete_vm`, `vbox_snapshot_delete`, `vbox_guest_copy_to` y `vbox_guest_copy_from`) aceptan `timeout_seconds` (600 por defecto). El resto usa `VBOX_MCP_TIMEOUT_SECONDS`.
+
 ## Tools
 
 ### Lectura (siempre disponibles)
@@ -110,6 +112,9 @@ Total: **31 tools**.
   - `vbox_reset_vm`
   - `vbox_snapshot_restore`
   - `vbox_snapshot_delete`
+- Los fallos de `VBoxManage` se devuelven como error de tool (`isError`) con el mensaje original, para que el agente pueda corregir la llamada.
+- Para `network="bridged"` u `"hostonly"` en `vbox_create_vm`/`vbox_modify_vm` hay que indicar `adapter` (por ejemplo `"Ethernet"` o `"vboxnet0"`); si falta, la tool falla con un mensaje accionable.
+- Las reglas NAT aceptan `host_ip` para limitar la escucha a una interfaz concreta (por ejemplo `127.0.0.1`).
 - Ninguna tool usa `shell=True`; los argumentos van en lista.
 - Las contraseñas del guest se pasan por un archivo temporal (`--passwordfile`) y se borran siempre; nunca van en `argv` ni en el log.
 - Cada llamada se audita en JSONL con `password`, `passwd`, `secret`, `token` y similares redactados.
@@ -157,6 +162,19 @@ vbox_guest_exec(
 )
 ```
 
+Añadir una regla NAT solo para localhost:
+
+```text
+vbox_nat_port_forward_add(
+  vm="ubuntu-test",
+  rule_name="ssh",
+  protocol="tcp",
+  host_port=2222,
+  guest_port=22,
+  host_ip="127.0.0.1"
+)
+```
+
 ## Desarrollo
 
 ```powershell
@@ -169,4 +187,5 @@ vbox_guest_exec(
 - El ratón solo funciona en Windows: mueve el cursor real sobre la ventana de VirtualBox. No uses la máquina mientras un agente controle el ratón.
 - `vbox_screenshot`, `vbox_send_keys` y `vbox_mouse_*` requieren la VM encendida (no sirven en estado guardado).
 - Sin Guest Additions, `vbox_guest_*` y las carpetas compartidas fallan con un mensaje accionable.
+- Las carpetas compartidas añadidas con la VM encendida son `--transient` (VirtualBox no permite persistirlas en caliente); vuelven a desaparecer al apagar la VM.
 - El servidor no instala Guest Additions ni crea controladores SATA en VMs ya existentes; `vbox_create_vm` sí lo hace.

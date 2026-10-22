@@ -10,7 +10,24 @@ from typing import Any
 from .config import Settings
 from .vboxmanage import VBoxError
 
-_SECRET_KEYS = {"password", "passwd", "secret", "token", "api_key", "apikey"}
+_SECRET_PARTS = (
+    "password",
+    "passwd",
+    "pass",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "credential",
+    "private_key",
+    "privatekey",
+    "pwd",
+)
+
+
+def _is_secret_key(key: object) -> bool:
+    normalized = str(key).lower().replace("-", "_")
+    return any(part in normalized for part in _SECRET_PARTS)
 
 
 class ConfirmationRequired(Exception):
@@ -39,7 +56,7 @@ def require_confirm(confirm: bool, action: str, target: str, effects: list[str])
 def redact(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key: ("***" if str(key).lower() in _SECRET_KEYS else redact(item))
+            key: ("***" if _is_secret_key(key) else redact(item))
             for key, item in value.items()
         }
     if isinstance(value, (list, tuple)):

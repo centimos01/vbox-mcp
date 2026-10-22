@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import locale
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -29,6 +30,11 @@ class CommandResult:
 
 
 def _decode(raw: bytes) -> str:
+    for encoding in ("utf-8", locale.getpreferredencoding(False), "cp1252"):
+        try:
+            return raw.decode(encoding)[:MAX_OUTPUT_CHARS]
+        except (UnicodeDecodeError, LookupError):
+            continue
     return raw.decode("utf-8", errors="replace")[:MAX_OUTPUT_CHARS]
 
 
@@ -63,6 +69,7 @@ def run_process(
             capture_output=True,
             timeout=timeout,
             creationflags=creationflags,
+            stdin=subprocess.DEVNULL,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:

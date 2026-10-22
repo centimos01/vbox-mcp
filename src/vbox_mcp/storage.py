@@ -2,12 +2,34 @@
 
 from __future__ import annotations
 
+import ipaddress
 from pathlib import Path
 
 from .config import Settings
-from .vboxmanage import VBoxError, run, validate_vm
+from .parsing import parse_machine_readable
+from .vboxmanage import VBoxError, run, run_process, validate_vm
 
 _PROTOCOLS = {"tcp", "udp"}
+
+
+def _is_running(settings: Settings, vm: str) -> bool:
+    result = run_process(["showvminfo", vm, "--machinereadable"], settings=settings)
+    if result.returncode != 0:
+        return False
+    return parse_machine_readable(result.stdout).get("VMState") == "running"
+
+
+def _validate_ip(label: str, value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    if "," in value or any(char.isspace() for char in value):
+        raise VBoxError(f"{label} no puede contener comas ni espacios: {value!r}")
+    try:
+        ipaddress.ip_address(value)
+    except ValueError as exc:
+        raise VBoxError(f"{label} no es una IP válida: {value!r}") from exc
+    return value
 
 
 def attach_iso(
@@ -94,14 +116,27 @@ def shared_folder_add(
         args.append("--automount")
     if readonly:
         args.append("--readonly")
+    transient = _is_running(settings, vm)
+    if transient:
+        args.append("--transient")
     run(args, settings=settings)
-    return {"vm": vm, "action": "shared_folder_add", "name": name, "host_path": str(folder)}
+    return {
+        "vm": vm,
+        "action": "shared_folder_add",
+        "name": name,
+        "host_path": str(folder),
+        "transient": transient,
+    }
 
 
 def shared_folder_remove(settings: Settings, vm: str, name: str) -> dict[str, object]:
     vm = validate_vm(vm)
-    run(["sharedfolder", "remove", vm, "--name", name], settings=settings)
-    return {"vm": vm, "action": "shared_folder_remove", "name": name}
+    args = ["sharedfolder", "remove", vm, "--name", name]
+    transient = _is_running(settings, vm)
+    if transient:
+        args.append("--transient")
+    run(args, settings=settings)
+    return {"vm": vm, "action": "shared_folder_remove", "name": name, "transient": transient}
 
 
 def nat_port_forward_add(
@@ -112,6 +147,7 @@ def nat_port_forward_add(
     host_port: int,
     guest_port: int,
     guest_ip: str = "",
+    host_ip: str = "",
 ) -> dict[str, object]:
     vm = validate_vm(vm)
     protocol = protocol.lower()
@@ -123,12 +159,23 @@ def nat_port_forward_add(
         if not 1 <= int(port) <= 65535:
             raise VBoxError(f"{label} debe estar entre 1 y 65535")
 
-    rule = f"{rule_name},{protocol},,{host_port},{guest_ip},{guest_port}"
-    run(["modifyvm", vm, "--natpf1", rule], settings=settings)
+    guest_ip = _validate_ip("guest_ip", guest_ip)
+    host_ip = _validate_ip("host_ip", host_ip)
+
+    rule = f"{rule_name},{protocol},{host_ip},{host_port},{guest_ip},{guest_port}"
+    if _is_running(settings, vm):
+        args = ["controlvm", vm, "natpf1", rule]
+    else:
+        args = ["modifyvm", vm, "--natpf1", rule]
+    run(args, settings=settings)
     return {"vm": vm, "action": "nat_port_forward_add", "rule": rule}
 
 
 def nat_port_forward_remove(settings: Settings, vm: str, rule_name: str) -> dict[str, object]:
     vm = validate_vm(vm)
-    run(["modifyvm", vm, "--natpf1", "delete", rule_name], settings=settings)
+    if _is_running(settings, vm):
+        args = ["controlvm", vm, "natpf1", "delete", rule_name]
+    else:
+        args = ["modifyvm", vm, "--natpf1", "delete", rule_name]
+    run(args, settings=settings)
     return {"vm": vm, "action": "nat_port_forward_remove", "rule": rule_name}

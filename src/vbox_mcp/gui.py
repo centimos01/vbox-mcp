@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import struct
 import sys
@@ -113,7 +114,11 @@ def screenshot(settings: Settings, vm: str, display: int = 0) -> Path:
     directory = Path(tempfile.gettempdir()) / "vbox-mcp-shots"
     directory.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", vm) or "vm"
-    path = directory / f"{safe}-{int(time.time() * 1000)}-{display}.png"
+    fd, name = tempfile.mkstemp(
+        prefix=f"{safe}-", suffix=f"-{display}.png", dir=str(directory)
+    )
+    os.close(fd)
+    path = Path(name)
 
     run(["controlvm", vm, "screenshotpng", str(path), str(display)], settings=settings)
 
@@ -210,27 +215,98 @@ def _find_window(vm: str) -> int:
     return int(hwnd)
 
 
-def _client_size(vm: str) -> tuple[int, int]:
-    import ctypes
-    from ctypes import wintypes
+def _largest_child(rects: list[tuple[int, int, int, int, int]]) -> int | None:
+    best: int | None = None
+    best_area = 0
+    for hwnd, left, top, right, bottom in rects:
+        area = max(0, right - left) * max(0, bottom - top)
+        if area > best_area:
+            best = hwnd
+            best_area = area
+    return best
 
-    hwnd = _find_window(vm)
-    rect = wintypes.RECT()
-    if not ctypes.windll.user32.GetClientRect(hwnd, ctypes.byref(rect)):
-        raise VBoxError("No se pudo obtener el tamaño de la ventana de la VM.")
-    return int(rect.right), int(rect.bottom)
 
-
-def _focus_and_move(vm: str, px: int, py: int) -> None:
+def _child_rects(hwnd: int) -> list[tuple[int, int, int, int, int]]:
     import ctypes
     from ctypes import wintypes
 
     user32 = ctypes.windll.user32
-    hwnd = _find_window(vm)
-    user32.SetForegroundWindow(hwnd)
+    rects: list[tuple[int, int, int, int, int]] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def collect(child: int, _lparam: int) -> bool:
+        if not user32.IsWindowVisible(child):
+            return True
+        rect = wintypes.RECT()
+        if not user32.GetClientRect(child, ctypes.byref(rect)):
+            return True
+        width = int(rect.right - rect.left)
+        height = int(rect.bottom - rect.top)
+        if width > 0 and height > 0:
+            rects.append((int(child), 0, 0, width, height))
+        return True
+
+    user32.EnumChildWindows(hwnd, collect, 0)
+    return rects
+
+
+def _display_window(vm: str) -> tuple[int, int, int]:
+    """Devuelve la ventana del framebuffer del guest y su tamaño de cliente.
+
+    La ventana de nivel superior incluye barra de menú, toolbar y barra de estado;
+    el framebuffer es el hijo visible de mayor área.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    top = _find_window(vm)
+    display = _largest_child(_child_rects(top)) or top
+    rect = wintypes.RECT()
+    if not ctypes.windll.user32.GetClientRect(display, ctypes.byref(rect)):
+        raise VBoxError("No se pudo obtener el tamaño de la ventana de la VM.")
+    return display, int(rect.right - rect.left), int(rect.bottom - rect.top)
+
+
+def _client_size(vm: str) -> tuple[int, int]:
+    _display, width, height = _display_window(vm)
+    return width, height
+
+
+def _foreground_ok(hwnd: int, user32: object) -> bool:
+    return bool(
+        user32.GetForegroundWindow() == hwnd
+        and user32.IsWindowVisible(hwnd)
+        and not user32.IsIconic(hwnd)
+    )
+
+
+def _focus_and_move(
+    vm: str, px: int, py: int, display_hwnd: int | None = None
+) -> None:
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    top = _find_window(vm)
+    if display_hwnd is None:
+        display_hwnd = _display_window(vm)[0]
+
+    for _ in range(3):
+        user32.SetForegroundWindow(top)
+        time.sleep(0.05)
+        if _foreground_ok(top, user32):
+            break
+    else:
+        raise VBoxError(
+            "No se pudo poner la ventana de la VM en primer plano. "
+            "Haz clic en ella y vuelve a intentarlo."
+        )
+
     point = wintypes.POINT(px, py)
-    user32.ClientToScreen(hwnd, ctypes.byref(point))
-    user32.SetCursorPos(int(point.x), int(point.y))
+    if not user32.ClientToScreen(display_hwnd, ctypes.byref(point)):
+        raise VBoxError("No se pudo mapear la coordenada al framebuffer de la VM.")
+    if not user32.SetCursorPos(int(point.x), int(point.y)):
+        raise VBoxError("No se pudo mover el cursor del sistema.")
 
 
 def _move_to(vm: str, px: int, py: int) -> None:
@@ -244,7 +320,12 @@ def _click_at(vm: str, px: int, py: int, button: str, double: bool) -> None:
         raise VBoxError(f"button debe ser uno de {sorted(_BUTTONS)}")
     down, up = _BUTTONS[button]
     user32 = ctypes.windll.user32
-    _focus_and_move(vm, px, py)
+    display_hwnd = _display_window(vm)[0]
+    _focus_and_move(vm, px, py, display_hwnd)
+    if not _foreground_ok(_find_window(vm), user32):
+        raise VBoxError(
+            "La ventana de la VM perdió el foco antes de hacer clic; no se envió el clic."
+        )
     time.sleep(0.05)
     for _ in range(2 if double else 1):
         user32.mouse_event(down, 0, 0, 0, 0)
@@ -252,10 +333,17 @@ def _click_at(vm: str, px: int, py: int, button: str, double: bool) -> None:
         time.sleep(0.05)
 
 
+def _guest_size(settings: Settings, vm: str) -> tuple[int, int]:
+    shot = screenshot(settings, vm)
+    try:
+        return png_size(shot)
+    finally:
+        shot.unlink(missing_ok=True)
+
+
 def mouse_move(settings: Settings, vm: str, x: int, y: int) -> dict[str, object]:
     _require_mouse(settings)
-    shot = screenshot(settings, vm)
-    guest_w, guest_h = png_size(shot)
+    guest_w, guest_h = _guest_size(settings, vm)
     client_w, client_h = _client_size(vm)
     px, py = map_coords(x, y, guest_w, guest_h, client_w, client_h)
     _move_to(vm, px, py)
@@ -271,8 +359,7 @@ def mouse_click(
     double: bool = False,
 ) -> dict[str, object]:
     _require_mouse(settings)
-    shot = screenshot(settings, vm)
-    guest_w, guest_h = png_size(shot)
+    guest_w, guest_h = _guest_size(settings, vm)
     client_w, client_h = _client_size(vm)
     px, py = map_coords(x, y, guest_w, guest_h, client_w, client_h)
     _click_at(vm, px, py, button, double)

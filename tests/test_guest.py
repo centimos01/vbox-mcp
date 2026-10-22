@@ -136,3 +136,27 @@ def test_guest_exec_redacts_password_from_audit(settings: Settings, fake) -> Non
     guest_exec(settings, "Win10", user="u", password="super-secret", exe="cmd.exe")
 
     assert "super-secret" not in fake.log.read_text(encoding="utf-8")
+
+def test_guest_exec_uses_supported_cwd_flag(settings: Settings, fake) -> None:
+    fake.response("default", stdout="ok")
+
+    guest_exec(
+        settings,
+        "Ubuntu",
+        user="u",
+        password="p",
+        exe="/bin/ls",
+        working_dir="/tmp",
+    )
+
+    call = fake.calls()[-1]
+    assert "--cwd" in call
+    assert call[call.index("--cwd") + 1] == "/tmp"
+    assert "--working-dir" not in call
+
+
+def test_guest_exec_unknown_vbox_failure_raises(settings: Settings, fake) -> None:
+    fake.response("default", stderr="VBoxManage: error: something unexpected", returncode=1)
+
+    with pytest.raises(VBoxError, match="something unexpected"):
+        guest_exec(settings, "Win10", user="u", password="p", exe="cmd.exe")

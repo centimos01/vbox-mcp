@@ -10,6 +10,8 @@ import threading
 from pathlib import Path
 
 import pytest
+from mcp import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import LATEST_PROTOCOL_VERSION
 
 from vbox_mcp.config import Settings
@@ -212,3 +214,51 @@ def test_stdio_handshake_lists_tools(settings: Settings, fake) -> None:
     finally:
         process.terminate()
         process.wait(timeout=10)
+
+def test_read_error_sets_is_error(settings: Settings, fake) -> None:
+    fake.response(
+        "showvminfo Win10 --machinereadable",
+        stderr="VBoxManage: error: no such VM",
+        returncode=1,
+    )
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(ROOT / "src"),
+        "VBOX_MANAGE_PATH": str(fake.cmd),
+        "VBOX_MCP_AUDIT_LOG": str(settings.audit_log),
+    }
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "vbox_mcp"],
+        env=env,
+        cwd=str(ROOT),
+    )
+
+    async def invoke():
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                return await session.call_tool("vbox_vm_info", {"vm": "Win10"})
+
+    result = asyncio.run(invoke())
+
+    assert result.is_error is True
+    assert "no such VM" in result.content[0].text
+
+
+def test_audit_redacts_secret_env_values(settings: Settings, fake) -> None:
+    fake.response("default", stdout="ok")
+
+    call(
+        settings,
+        "vbox_guest_exec",
+        {
+            "vm": "Win10",
+            "user": "u",
+            "password": "pw",
+            "exe": "cmd.exe",
+            "env": {"DB_PASS": "super-secret-env"},
+        },
+    )
+
+    assert "super-secret-env" not in settings.audit_log.read_text(encoding="utf-8")

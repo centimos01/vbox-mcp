@@ -135,3 +135,39 @@ def test_mouse_disabled_by_setting(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(VBoxError, match="ratón"):
         gui.mouse_move(settings, "Win10", 10, 10)
+
+def test_largest_child_picks_display_area() -> None:
+    assert gui._largest_child([(1, 0, 0, 100, 100), (2, 0, 0, 800, 600)]) == 2
+    assert gui._largest_child([(1, 0, 0, 100, 100)]) == 1
+    assert gui._largest_child([]) is None
+
+
+def test_foreground_ok_requires_visible_focused_window() -> None:
+    class FakeUser32:
+        def __init__(self, foreground: int, visible: bool = True, iconic: bool = False) -> None:
+            self.foreground = foreground
+            self.visible = visible
+            self.iconic = iconic
+
+        def GetForegroundWindow(self) -> int:
+            return self.foreground
+
+        def IsWindowVisible(self, hwnd: int) -> bool:
+            return self.visible
+
+        def IsIconic(self, hwnd: int) -> bool:
+            return self.iconic
+
+    assert gui._foreground_ok(7, FakeUser32(7)) is True
+    assert gui._foreground_ok(7, FakeUser32(8)) is False
+    assert gui._foreground_ok(7, FakeUser32(7, visible=False)) is False
+    assert gui._foreground_ok(7, FakeUser32(7, iconic=True)) is False
+
+
+def test_screenshots_do_not_collide(settings: Settings, fake) -> None:
+    fake.response("default", touch_index=3)
+
+    first = screenshot(settings, "Win10")
+    second = screenshot(settings, "Win10")
+
+    assert first != second

@@ -126,7 +126,9 @@ def test_modify_vm_requires_a_change(settings: Settings) -> None:
 
 
 def test_modify_vm_args(settings: Settings, fake) -> None:
-    modify_vm(settings, "Win10", cpus=8, memory_mb=16384, nic="bridged")
+    modify_vm(
+        settings, "Win10", cpus=8, memory_mb=16384, nic="bridged", adapter="Ethernet"
+    )
 
     assert fake.last_args == [
         "modifyvm",
@@ -137,6 +139,8 @@ def test_modify_vm_args(settings: Settings, fake) -> None:
         "16384",
         "--nic1",
         "bridged",
+        "--bridgeadapter1",
+        "Ethernet",
     ]
 
 
@@ -150,7 +154,7 @@ def test_clone_vm_full(settings: Settings, fake) -> None:
         "Win10-copia",
         "--register",
         "--mode",
-        "all",
+        "machine",
     ]
 
 
@@ -183,3 +187,29 @@ def test_delete_vm_can_delete_disks(settings: Settings, fake) -> None:
 
     assert fake.last_args == ["unregistervm", "Win10", "--delete"]
 
+
+def test_create_vm_bridged_requires_adapter(settings: Settings) -> None:
+    with pytest.raises(VBoxError, match="adapter"):
+        create_vm(settings, "NewVM", "Windows10_64", network="bridged")
+
+
+def test_create_vm_bridged_with_adapter(settings: Settings, fake) -> None:
+    create_vm(settings, "NewVM", "Windows10_64", network="bridged", adapter="Ethernet")
+
+    assert fake.last_args == [
+        "modifyvm",
+        "NewVM",
+        "--cpus",
+        "2",
+        "--memory",
+        "2048",
+        "--nic1",
+        "bridged",
+        "--bridgeadapter1",
+        "Ethernet",
+    ]
+
+
+def test_modify_vm_bridged_requires_adapter(settings: Settings) -> None:
+    with pytest.raises(VBoxError, match="adapter"):
+        modify_vm(settings, "Win10", nic="bridged")

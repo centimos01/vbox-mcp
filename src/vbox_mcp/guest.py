@@ -92,7 +92,7 @@ def guest_exec(
             str(int(timeout * 1000)),
         ]
         if working_dir:
-            command += ["--working-dir", working_dir]
+            command += ["--cwd", working_dir]
         for key, value in env.items():
             command += ["--putenv", f"{key}={value}"]
         command += ["--", *args]
@@ -101,6 +101,14 @@ def guest_exec(
 
     if result.returncode != 0:
         _translate_error(result)
+        marker = _EXIT_RE.search(result.stdout) or _EXIT_RE.search(result.stderr)
+        if marker is None:
+            detail = result.stderr.strip() or result.stdout.strip() or "sin detalle"
+            raise VBoxError(
+                f"VBoxManage guestcontrol falló con código {result.returncode}: {detail}",
+                returncode=result.returncode,
+                stderr=result.stderr,
+            )
 
     match = _EXIT_RE.search(result.stdout) or _EXIT_RE.search(result.stderr)
     exit_code = int(match.group(1)) if match else result.returncode
@@ -116,6 +124,7 @@ def guest_copy_to(
     host_path: str,
     guest_path: str,
     recursive: bool = False,
+    timeout: int | None = None,
 ) -> dict[str, object]:
     vm = validate_vm(vm)
     source = Path(host_path)
@@ -136,7 +145,7 @@ def guest_copy_to(
         ]
         if recursive:
             command.append("--recursive")
-        run(command, settings=settings)
+        run(command, settings=settings, timeout=timeout)
 
     return {"vm": vm, "action": "guest_copy_to", "host_path": str(source), "guest_path": guest_path}
 
@@ -149,6 +158,7 @@ def guest_copy_from(
     guest_path: str,
     host_path: str,
     recursive: bool = False,
+    timeout: int | None = None,
 ) -> dict[str, object]:
     vm = validate_vm(vm)
     target = Path(host_path)
@@ -168,6 +178,6 @@ def guest_copy_from(
         ]
         if recursive:
             command.append("--recursive")
-        run(command, settings=settings)
+        run(command, settings=settings, timeout=timeout)
 
     return {"vm": vm, "action": "guest_copy_from", "guest_path": guest_path, "host_path": str(target)}

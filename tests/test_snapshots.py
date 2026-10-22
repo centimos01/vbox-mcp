@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
 from vbox_mcp.config import Settings
 from vbox_mcp.snapshots import snapshot_delete, snapshot_restore, snapshot_take
+from vbox_mcp.vboxmanage import VBoxError
 
 
 def test_snapshot_take(settings: Settings, fake) -> None:
@@ -27,3 +30,9 @@ def test_snapshot_delete(settings: Settings, fake) -> None:
     snapshot_delete(settings, "Win10", "base")
 
     assert fake.last_args == ["snapshot", "Win10", "delete", "base"]
+
+
+@pytest.mark.parametrize("name", ["", "  ", "--help", "-delete"])
+def test_snapshot_names_cannot_be_flags(settings: Settings, name: str) -> None:
+    with pytest.raises(VBoxError, match="snapshot"):
+        snapshot_take(settings, "Win10", name)
