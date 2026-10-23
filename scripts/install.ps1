@@ -33,15 +33,35 @@ function Invoke-Step {
     }
 }
 
+function Get-PythonVersion {
+    param(
+        [string]$Exe,
+        [string[]]$Prefix = @()
+    )
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & $Exe $Prefix -c "import sys; print(str(sys.version_info[0]) + '.' + str(sys.version_info[1]))" 2>$null
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $oldEap
+    }
+    if ($exitCode -ne 0 -or -not $output) {
+        return $null
+    }
+    return ($output | Select-Object -Last 1)
+}
+
 function Find-BasePython {
     if ($PythonPath) {
         $exe = $PythonPath
         $prefix = @()
-        $version = & $exe -c "import sys; print(str(sys.version_info[0]) + '.' + str(sys.version_info[1]))" 2>$null
-        if ($LASTEXITCODE -ne 0 -or -not $version) {
+        $version = Get-PythonVersion $exe $prefix
+        if (-not $version) {
             throw "No se pudo ejecutar Python en '$PythonPath'."
         }
-        if ([version]($version | Select-Object -Last 1) -lt [version]"3.11") {
+        if ([version]$version -lt [version]"3.11") {
             throw "Python 3.11+ es obligatorio; '$PythonPath' es $version."
         }
         return @{ Exe = $exe; Prefix = $prefix }
@@ -59,12 +79,9 @@ function Find-BasePython {
     foreach ($attempt in $attempts) {
         $exe = $attempt[0]
         $prefix = @($attempt[1])
-        $version = & $exe $prefix -c "import sys; print(str(sys.version_info[0]) + '.' + str(sys.version_info[1]))" 2>$null
-        if ($LASTEXITCODE -eq 0 -and $version) {
-            $last = $version | Select-Object -Last 1
-            if ([version]$last -ge [version]"3.11") {
-                return @{ Exe = $exe; Prefix = $prefix }
-            }
+        $version = Get-PythonVersion $exe $prefix
+        if ($version -and [version]$version -ge [version]"3.11") {
+            return @{ Exe = $exe; Prefix = $prefix }
         }
     }
 
