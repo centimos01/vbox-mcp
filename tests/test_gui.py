@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import struct
-import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -116,7 +116,7 @@ def test_send_keys_auto_uses_scancode_for_tokens(settings: Settings, fake) -> No
 
 
 def test_mouse_requires_windows(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(gui.sys, "platform", "linux")
+    monkeypatch.setattr(gui, "sys", SimpleNamespace(platform="linux"))
 
     with pytest.raises(VBoxError, match="Windows"):
         gui.mouse_move(settings, "Win10", 10, 10)
@@ -127,7 +127,7 @@ def test_mouse_click_maps_coordinates(settings: Settings, monkeypatch: pytest.Mo
     shot.write_bytes(b"x")
     calls: list[tuple] = []
 
-    monkeypatch.setattr(gui.sys, "platform", "win32")
+    monkeypatch.setattr(gui, "sys", SimpleNamespace(platform="win32"))
     monkeypatch.setattr(gui, "screenshot", lambda *a, **k: shot)
     monkeypatch.setattr(gui, "png_size", lambda path: (800, 600))
     monkeypatch.setattr(gui, "_client_size", lambda vm: (1000, 1000))
@@ -148,7 +148,7 @@ def test_mouse_disabled_by_setting(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         guest_user=None,
         guest_password=None,
     )
-    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(gui, "sys", SimpleNamespace(platform="win32"))
 
     with pytest.raises(VBoxError, match="ratón"):
         gui.mouse_move(settings, "Win10", 10, 10)

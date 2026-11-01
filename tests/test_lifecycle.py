@@ -1,5 +1,7 @@
 ﻿from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from vbox_mcp.config import Settings
@@ -99,16 +101,20 @@ def test_create_vm_minimal(settings: Settings, fake) -> None:
     assert result["disk"] is None
 
 
-def test_create_vm_with_disk(settings: Settings, fake) -> None:
+def test_create_vm_with_disk(settings: Settings, fake, tmp_path: Path) -> None:
+    cfg = tmp_path / "NewVM" / "NewVM.vbox"
+    cfg.parent.mkdir()
+    cfg.write_text("", encoding="utf-8")
     fake.response(
         "showvminfo NewVM --machinereadable",
-        stdout='CfgFile="C:\\\\VMs\\\\NewVM\\\\NewVM.vbox"\n',
+        stdout=f'CfgFile="{cfg.as_posix()}"\n',
     )
 
     create_vm(settings, "NewVM", "Windows10_64", disk_mb=10240)
 
+    disk = str(cfg.parent / "NewVM.vdi")
     calls = fake.calls()
-    assert ["createmedium", "disk", "--filename", r"C:\VMs\NewVM\NewVM.vdi", "--size", "10240", "--format", "VDI"] in calls
+    assert ["createmedium", "disk", "--filename", disk, "--size", "10240", "--format", "VDI"] in calls
     assert ["storagectl", "NewVM", "--name", "sata", "--add", "sata", "--controller", "IntelAhci"] in calls
     assert [
         "storageattach",
@@ -122,7 +128,7 @@ def test_create_vm_with_disk(settings: Settings, fake) -> None:
         "--type",
         "hdd",
         "--medium",
-        r"C:\VMs\NewVM\NewVM.vdi",
+        disk,
     ] in calls
 
 
