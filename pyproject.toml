@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 dependencies = ["mcp>=2,<3"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "mypy>=1.11"]
 
 [project.scripts]
 vbox-mcp = "vbox_mcp.__main__:main"
@@ -25,3 +25,8 @@ testpaths = ["tests"]
 markers = ["integration: requiere VirtualBox real"]
 asyncio_mode = "auto"
 addopts = "-m 'not integration'"
+
+[tool.mypy]
+# La automatización GUI usa APIs Windows-only (ctypes.windll, CREATE_NO_WINDOW).
+# Tipar como Windows evita falsos positivos al ejecutar mypy en Linux.
+platform = "win32"

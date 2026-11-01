@@ -17,11 +17,19 @@ class FakeVBox:
         self.log = tmp_path / "calls.jsonl"
         self.config = tmp_path / "responses.json"
         self.config.write_text("{}", encoding="utf-8")
-        self.cmd = tmp_path / "VBoxManage.cmd"
-        self.cmd.write_text(
-            f'@echo off\r\n"{sys.executable}" "{FAKE_SCRIPT}" %*\r\n',
-            encoding="utf-8",
-        )
+        if sys.platform == "win32":
+            self.cmd = tmp_path / "VBoxManage.cmd"
+            self.cmd.write_text(
+                f'@echo off\r\n"{sys.executable}" "{FAKE_SCRIPT}" %*\r\n',
+                encoding="utf-8",
+            )
+        else:
+            self.cmd = tmp_path / "VBoxManage"
+            self.cmd.write_text(
+                f'#!/bin/sh\nexec "{sys.executable}" "{FAKE_SCRIPT}" "$@"\n',
+                encoding="utf-8",
+            )
+            self.cmd.chmod(0o755)
 
     def response(
         self,
