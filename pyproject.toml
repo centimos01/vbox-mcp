@@ -25,3 +25,8 @@ testpaths = ["tests"]
 markers = ["integration: requiere VirtualBox real"]
 asyncio_mode = "auto"
 addopts = "-m 'not integration'"
+
+[tool.mypy]
+# La automatización GUI usa APIs Windows-only (ctypes.windll, CREATE_NO_WINDOW).
+# Tipar como Windows evita falsos positivos al ejecutar mypy en Linux.
+platform = "win32"
