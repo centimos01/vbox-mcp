@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 from .config import Settings
 from .vboxmanage import VBoxError, run, vm_info
@@ -216,7 +217,8 @@ def _window_title(vm: str) -> str:
 
 def _resolve_window_name(settings: Settings, vm: str) -> str:
     info = vm_info(settings, vm)
-    name = info.get("summary", {}).get("name")
+    summary = info.get("summary")
+    name = summary.get("name") if isinstance(summary, dict) else None
     return str(name) if name else vm
 
 
@@ -321,7 +323,7 @@ def _client_size(vm: str) -> tuple[int, int]:
     return width, height
 
 
-def _foreground_ok(hwnd: int, user32: object) -> bool:
+def _foreground_ok(hwnd: int, user32: Any) -> bool:
     return bool(
         user32.GetForegroundWindow() == hwnd
         and user32.IsWindowVisible(hwnd)
