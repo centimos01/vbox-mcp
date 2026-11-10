@@ -146,6 +146,18 @@ Las operaciones largas (`vbox_clone_vm`, `vbox_delete_vm`, `vbox_snapshot_take`,
 
 `vbox_send_keys`, `vbox_mouse_move`, `vbox_mouse_click`.
 
+### Skill de Control Autónomo
+
+El instalador copia la skill `virtualbox-control` a `~/.config/opencode/skills/virtualbox-control/`. Esta skill enseña a la IA el patrón de **ver → pensar → actuar → verificar** para controlar las VMs de forma completamente autónoma: capturar pantalla, analizar la interfaz, hacer clic, escribir texto y ejecutar comandos.
+
+La skill incluye:
+- El bucle de control autónomo (screenshot → analyze → act → verify)
+- Referencia del sistema de coordenadas del ratón
+- Referencia de teclado y teclas especiales
+- Workflows comunes (login Windows/Linux, abrir apps, ejecutar comandos, transferir archivos)
+- Mejores prácticas de timing y recuperación de errores
+- Referencia rápida de las 43 tools MCP
+
 ### Agrupación
 
 `vbox_group_vms`.
