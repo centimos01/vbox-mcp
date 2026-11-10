@@ -318,7 +318,7 @@ try {
     }
 
     if (-not $Yes -and -not $DryRun) {
-        $scope = if ($KeepVenv) { "el registro 'vbox' de OpenCode" } else { "el registro 'vbox' de OpenCode y el entorno .venv" }
+        $scope = if ($KeepVenv) { "el registro 'vbox' de OpenCode y la skill 'virtualbox-control'" } else { "el registro 'vbox' de OpenCode, la skill 'virtualbox-control' y el entorno .venv" }
         $answer = Read-Host "Se eliminara $scope. Continuar? (s/N)"
         if (-not $answer -or $answer.Trim() -notmatch "^(s|si|y|yes)$") {
             Write-Host "Cancelado."
@@ -374,6 +374,27 @@ try {
     }
     if ($edits.Count -eq 0) {
         Write-Warning "No se encontro el registro 'vbox' en la configuracion de OpenCode."
+    }
+
+    Write-Step "Eliminando la skill virtualbox-control de OpenCode"
+    $skillDst = Join-Path $configDir "skills\virtualbox-control"
+    if (Test-Path -LiteralPath $skillDst) {
+        if ($DryRun) {
+            Write-Host "    (dry-run: se borraria $skillDst)"
+        }
+        else {
+            Remove-Item -LiteralPath $skillDst -Recurse -Force
+            Write-Host "    Skill eliminada: $skillDst"
+            # Limpia la carpeta skills si queda vacia
+            $skillsParent = Split-Path -Parent $skillDst
+            $remaining = @(Get-ChildItem -LiteralPath $skillsParent -ErrorAction SilentlyContinue)
+            if ($remaining.Count -eq 0) {
+                Remove-Item -LiteralPath $skillsParent -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    else {
+        Write-Host "    No existe $skillDst"
     }
 
     Write-Step "Eliminando el entorno virtual"

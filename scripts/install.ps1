@@ -226,6 +226,32 @@ try {
         Write-Warning "No se encontro VBoxManage. Instala VirtualBox o define VBOX_MANAGE_PATH."
     }
 
+    Write-Step "Instalando la skill virtualbox-control en OpenCode"
+    $skillSrc = Join-Path $root "skills\virtualbox-control"
+    $skillDst = Join-Path $configDir "skills\virtualbox-control"
+    if (Test-Path -LiteralPath $skillSrc) {
+        if ($DryRun) {
+            Write-Host "    (dry-run: se copiaria $skillSrc a $skillDst)"
+        }
+        else {
+            if (Test-Path -LiteralPath $skillDst) {
+                Remove-Item -LiteralPath $skillDst -Recurse -Force
+            }
+            New-Item -ItemType Directory -Path $skillDst -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $skillSrc "SKILL.md") -Destination $skillDst -Force
+            $refSrc = Join-Path $skillSrc "references"
+            if (Test-Path -LiteralPath $refSrc) {
+                $refDst = Join-Path $skillDst "references"
+                New-Item -ItemType Directory -Path $refDst -Force | Out-Null
+                Copy-Item -Path (Join-Path $refSrc "*") -Destination $refDst -Recurse -Force
+            }
+            Write-Host "    Skill instalada: $skillDst"
+        }
+    }
+    else {
+        Write-Warning "No se encontro la carpeta de skill en $skillSrc; se omite la instalacion de la skill."
+    }
+
     Write-Step "Registrando el servidor en OpenCode"
     $opencodeCmd = Get-Command opencode.cmd -ErrorAction SilentlyContinue
     if (-not $opencodeCmd) {
@@ -333,7 +359,8 @@ print(f"VMs detectadas: {len(list_vms(settings))}")
         Write-Host "Ejecuta sin -DryRun para aplicar los cambios."
     }
     else {
-        Write-Host "Reinicia OpenCode (o abre una sesion nueva) para cargar las tools."
+        Write-Host "Reinicia OpenCode (o abre una sesion nueva) para cargar las tools y la skill."
+        Write-Host "La skill 'virtualbox-control' permite a la IA controlar las VMs de forma autonoma."
     }
     exit 0
 }
